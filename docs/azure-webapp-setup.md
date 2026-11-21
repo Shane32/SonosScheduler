@@ -1,0 +1,129 @@
+# Azure Web App Setup
+
+This guide covers creating and configuring an Azure Web App for hosting your application.
+
+## Prerequisites
+
+Before starting this guide, ensure you have:
+
+- An Azure subscription
+- A resource group created (or permission to create one)
+
+## Create Azure Web App
+
+1. Navigate to the [Azure Portal](https://portal.azure.com)
+2. Click **Create a resource** > **Web App**
+3. Configure the web app:
+   - **Subscription**: Select your subscription
+   - **Resource Group**: Select or create a resource group
+   - **Name**: Enter a unique instance name (e.g., `myapp-dev` or `myapp-prod`)
+   - **Publish**: Code
+   - **Runtime Stack**: .NET 11
+   - **Operating System**: Linux
+   - **Region**: East US 2 (or your preferred region)
+   - **Pricing Plan**: Select appropriate plan for your needs
+   - **Secure default hostname**: Off
+4. Click **Review + create**, then **Create**
+
+## Create Runtime Managed Identity
+
+Create a user-assigned managed identity for the running application. Use separate runtime and deployment identities for each environment:
+
+| Web app      | Runtime identity              | Deployment identity (GitHub Actions) |
+| ------------ | ----------------------------- | ------------------------------------ |
+| `myapp-dev`  | `myapp-dev-runtime-identity`  | `myapp-dev-deploy-identity`          |
+| `myapp-prod` | `myapp-prod-runtime-identity` | `myapp-prod-deploy-identity`         |
+
+1. In Azure Portal, search for **Managed Identities** and click **Create**
+2. Select the same subscription, resource group, and region as the web app
+3. Use the web app name with `-runtime-identity` appended (e.g., `myapp-dev-runtime-identity`)
+4. Click **Review + create**, then **Create**
+5. From the identity's **Overview** page, copy its **Client ID** for the application settings and database connection string below
+
+The runtime identity receives database and Key Vault permissions. Create the deployment identity separately using [GitHub Actions Configuration](github-actions-setup.md) and grant it deployment permissions.
+
+## Configure Web App Settings
+
+After the web app is created:
+
+1. Navigate to your web app in the Azure Portal
+2. Go to **Configuration**:
+   - Set **HTTP version** to **2.0**
+3. Go to **Identity**:
+   - Under **User assigned**, click **Add**
+   - Select the runtime identity (e.g., `myapp-dev-runtime-identity`) and click **Add**
+   - Leave **System assigned** set to **Off**
+4. Go to **Configuration** > **Application settings**:
+   - Add `AZURE_CLIENT_ID` with the runtime identity's **Client ID** (used for `DefaultAzureCredential`)
+   - Click **Save**
+
+## Grant Database Access to Web App
+
+The web app's user-assigned runtime identity needs permission to access the database. See [Azure Database Setup](azure-database-setup.md) for creating the database.
+
+1. Navigate to your SQL Database in Azure Portal
+2. Click **Query editor** and authenticate using Microsoft Entra authentication
+3. Execute the following SQL, replacing `myapp-dev-runtime-identity` with your runtime identity name:
+
+```sql
+CREATE USER [myapp-dev-runtime-identity] FROM EXTERNAL PROVIDER;
+ALTER ROLE db_owner ADD MEMBER [myapp-dev-runtime-identity];
+```
+
+The `db_owner` role is required to allow automatic migration of the database at application startup.
+
+## Grant Key Vault Access to Web App (Optional)
+
+If using Azure Key Vault, grant the web app access to read secrets. See [Azure Key Vault Setup](azure-keyvault-setup.md) for creating the key vault.
+
+1. Navigate to your key vault in Azure Portal
+2. Go to **Access control (IAM)** > **Add** > **Add role assignment**
+3. Select **Key Vault Secrets Officer** role
+4. Assign to **Managed identity** > **User-assigned managed identity** > select your runtime identity (e.g., `myapp-dev-runtime-identity`)
+5. Click **Review + assign**
+
+## Configure Application Settings and Secrets
+
+Configure environment-specific settings and secrets for your web app. You can store these in Azure Key Vault (recommended) or directly as application settings.
+
+### Using Key Vault (Recommended)
+
+If you're using Azure Key Vault and your production key vault differs from development:
+
+1. Navigate to your web app in Azure Portal
+2. Go to **Configuration** > **Application settings**
+3. Click **New application setting**
+4. Add the key vault name:
+   - **Name**: `KeyVaultName`
+   - **Value**: `myapp-prod` (just the name, not the full URI)
+5. Click **OK**, then **Save**
+
+Once configured, store all environment-specific secrets in the key vault:
+
+- Connection strings (e.g., `ConnectionStrings--AppDbContext`)
+- API keys
+- Authentication settings
+- Any other sensitive configuration
+
+See [Azure Key Vault Setup](azure-keyvault-setup.md) for details on adding secrets to the key vault.
+
+### Without Key Vault
+
+If you're not using Key Vault, configure any settings that differ from the development environment directly in the web app:
+
+1. Navigate to your web app in Azure Portal
+2. Go to **Configuration** > **Application settings**
+3. Click **New application setting**
+4. Add each setting using double underscores (`__`) to represent configuration hierarchy, such as:
+   - **Name**: `ConnectionStrings__AppDbContext`
+   - **Value**: `Server=tcp:your-server.database.windows.net,1433;Database=your-database;Authentication=Active Directory Default;`
+5. Click **OK**, then **Save**
+
+**Note:** Only configure settings that differ from your development environment (configured in `appsettings.json`).
+
+## Important Notes
+
+- Attach the user-assigned runtime identity to the web app and configure its client ID before starting the application
+- Use distinct runtime and deployment identities for each environment; assign database and Key Vault permissions to the runtime identity and deployment permissions to the deployment identity
+- Only configure application settings that differ from your development environment
+- Key Vault is recommended for storing sensitive configuration in production

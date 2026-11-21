@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+
+# Only run checks if files under ReactApp/ are staged.
+if ! git diff --cached --name-only | grep -q "^ReactApp/"; then
+  exit 0
+fi
+
+cd ReactApp
+# Stop if lint-staged fails so later checks cannot mask its exit code.
+if [ -n "$MSYSTEM" ]; then
+  npx.cmd lint-staged && npm.cmd run typecheck
+else
+  npx lint-staged && npm run typecheck
+fi
