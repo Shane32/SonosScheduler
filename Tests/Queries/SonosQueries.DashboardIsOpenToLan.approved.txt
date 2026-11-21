@@ -1,0 +1,36 @@
+{
+  "data": {
+    "groups": {
+      "items": [
+        {
+          "id": "1",
+          "name": "Home",
+          "speakers": [
+            {
+              "id": "1",
+              "isOnline": true,
+              "name": "Kitchen",
+              "state": "STOPPED"
+            },
+            {
+              "id": "2",
+              "isOnline": true,
+              "name": "Office",
+              "state": "PLAYING"
+            }
+          ],
+          "subnet": "192.168.1.0/24"
+        }
+      ],
+      "totalCount": 1
+    },
+    "schedules": {
+      "items": [],
+      "totalCount": 0
+    },
+    "session": {
+      "isAdmin": false,
+      "name": null
+    }
+  }
+}

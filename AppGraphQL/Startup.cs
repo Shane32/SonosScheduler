@@ -31,7 +31,12 @@ public class Startup
             .AddDI()
             .AddAutoClrMappings(true, false)
             .AddLinq<AppDbContext>()
-            .AddUnhandledExceptionHandler(ctx => {
+            .AddUnhandledExceptionHandler(async ctx => {
+                if (ctx.Exception is AppServices.ClientError clientError) { ctx.ErrorMessage = clientError.Message; return; }
+                var services = ctx.FieldContext?.RequestServices ?? ctx.Context?.RequestServices;
+                var http = services?.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>().HttpContext;
+                if (services is not null)
+                    await services.GetRequiredService<AppServices.ExceptionLogService>().RecordAsync(ctx.Exception, "GraphQL", http?.User.Identity?.Name ?? http?.Connection.RemoteIpAddress?.ToString() ?? "System");
                 var logger = (ctx.FieldContext?.RequestServices ?? ctx.Context?.RequestServices)?.GetRequiredService<ILogger<Startup>>();
                 if (logger == null)
                     return;
@@ -41,7 +46,7 @@ public class Startup
                     _logError(logger, ctx.Exception.Message, ctx.Exception);
                 }
             })
-            .AddJwtBearerAuthentication()
+
             .UsePersistedDocuments(o => {
                 o.AllowOnlyPersistedDocuments = false;
                 o.AllowedPrefixes.Clear();

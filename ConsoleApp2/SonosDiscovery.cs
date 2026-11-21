@@ -13,9 +13,9 @@ public sealed class SonosDiscovery(SonosClient client, SonosSettings settings, A
     {
         // Configured addresses act as seeds; their topology can reveal the remaining rooms.
         var locations = settings.SpeakerAddresses.Select(SonosSettings.DescriptionUri).ToHashSet();
-        if (locations.Count == 0 && string.IsNullOrWhiteSpace(settings.DiscoverySubnet))
-        {
-            foreach (var location in await DiscoverLocationsAsync(ct)) locations.Add(location);
+        if (locations.Count == 0 && string.IsNullOrWhiteSpace(settings.DiscoverySubnet)) {
+            foreach (var location in await DiscoverLocationsAsync(ct))
+                locations.Add(location);
         }
         var speakers = new ConcurrentDictionary<string, Speaker>();
         var hidden = new HashSet<string>();
@@ -23,20 +23,17 @@ public sealed class SonosDiscovery(SonosClient client, SonosSettings settings, A
         if (!string.IsNullOrWhiteSpace(settings.DiscoverySubnet))
             await ScanSubnetAsync(IPv4Subnet.Parse(settings.DiscoverySubnet), speakers, ct);
         var extraLocations = new HashSet<Uri>();
-        foreach (var seed in speakers.Values.ToArray())
-        {
-            try
-            {
-                foreach (var member in (await client.GetGroupsAsync(seed, ct)).SelectMany(g => g.Members))
-                {
-                    if (!member.Visible) hidden.Add(member.Id);
-                    else if (!speakers.ContainsKey(member.Id)) extraLocations.Add(member.DescriptionUri);
+        foreach (var seed in speakers.Values.ToArray()) {
+            try {
+                foreach (var member in (await client.GetGroupsAsync(seed, ct)).SelectMany(g => g.Members)) {
+                    if (!member.Visible)
+                        hidden.Add(member.Id);
+                    else if (!speakers.ContainsKey(member.Id))
+                        extraLocations.Add(member.DescriptionUri);
                 }
                 // One successful topology response is enough for this household. Keep looking at other
                 // seeds too, since the LAN may have separate S1/S2 households.
-            }
-            catch (Exception ex) when (IsConnectionError(ex, ct))
-            {
+            } catch (Exception ex) when (IsConnectionError(ex, ct)) {
                 log($"Could not read topology from {seed.Name}: {ex.Message}");
             }
         }
@@ -51,29 +48,22 @@ public sealed class SonosDiscovery(SonosClient client, SonosSettings settings, A
         var knownLocations = speakers.Values.Select(s => s.DescriptionUri).ToHashSet();
         var completed = 0;
         var found = 0;
-        await Parallel.ForEachAsync(subnet.GetHostAddresses(), new ParallelOptions
-        {
+        await Parallel.ForEachAsync(subnet.GetHostAddresses(), new ParallelOptions {
             MaxDegreeOfParallelism = settings.SubnetScanConcurrency,
             CancellationToken = ct
-        }, async (address, token) =>
-        {
+        }, async (address, token) => {
             var location = SonosSettings.DescriptionUri(address.ToString());
-            if (!knownLocations.Contains(location))
-            {
+            if (!knownLocations.Contains(location)) {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
                 timeout.CancelAfter(TimeSpan.FromSeconds(settings.SubnetScanTimeoutSeconds));
-                try
-                {
+                try {
                     var speaker = await client.GetSpeakerAsync(location, timeout.Token);
                     if (speaker.Id.StartsWith("RINCON_", StringComparison.OrdinalIgnoreCase) &&
-                        speaker.Services.ContainsKey("AVTransport") && speaker.Services.ContainsKey("ZoneGroupTopology"))
-                    {
+                        speaker.Services.ContainsKey("AVTransport") && speaker.Services.ContainsKey("ZoneGroupTopology")) {
                         speakers[speaker.Id] = speaker;
                         Interlocked.Increment(ref found);
                     }
-                }
-                catch (Exception ex) when (IsConnectionError(ex, token))
-                {
+                } catch (Exception ex) when (IsConnectionError(ex, token)) {
                     // Most addresses will be offline or not Sonos devices. Keep those misses quiet.
                 }
             }
@@ -85,15 +75,11 @@ public sealed class SonosDiscovery(SonosClient client, SonosSettings settings, A
 
     private async Task LoadSpeakersAsync(IEnumerable<Uri> locations, ConcurrentDictionary<string, Speaker> speakers, CancellationToken ct)
     {
-        await Parallel.ForEachAsync(locations, new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = ct }, async (location, token) =>
-        {
-            try
-            {
+        await Parallel.ForEachAsync(locations, new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = ct }, async (location, token) => {
+            try {
                 var speaker = await client.GetSpeakerAsync(location, token);
                 speakers[speaker.Id] = speaker;
-            }
-            catch (Exception ex) when (IsConnectionError(ex, token))
-            {
+            } catch (Exception ex) when (IsConnectionError(ex, token)) {
                 log($"Could not connect to {location.Host}: {ex.Message}");
             }
         });
@@ -119,8 +105,7 @@ public sealed class SonosDiscovery(SonosClient client, SonosSettings settings, A
         var locations = new HashSet<Uri>();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(settings.DiscoveryTimeoutSeconds));
-        try
-        {
+        try {
             using var udp = new UdpClient(new IPEndPoint(address, 0));
             udp.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface, address.GetAddressBytes());
             udp.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 4);
@@ -128,20 +113,16 @@ public sealed class SonosDiscovery(SonosClient client, SonosSettings settings, A
             var destination = new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900);
             for (var attempt = 0; attempt < 3; attempt++)
                 await udp.SendAsync(message, destination, timeout.Token);
-            while (true)
-            {
+            while (true) {
                 var response = await udp.ReceiveAsync(timeout.Token);
-                foreach (var line in Encoding.UTF8.GetString(response.Buffer).Split("\r\n"))
-                {
+                foreach (var line in Encoding.UTF8.GetString(response.Buffer).Split("\r\n")) {
                     var colon = line.IndexOf(':');
                     if (colon > 0 && line[..colon].Equals("LOCATION", StringComparison.OrdinalIgnoreCase) &&
                         Uri.TryCreate(line[(colon + 1)..].Trim(), UriKind.Absolute, out var uri) && uri.Scheme == "http")
                         locations.Add(uri);
                 }
             }
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
-        catch (SocketException ex) { log($"Discovery on {address}: {ex.Message}"); }
+        } catch (OperationCanceledException) when (!ct.IsCancellationRequested) { } catch (SocketException ex) { log($"Discovery on {address}: {ex.Message}"); }
         ct.ThrowIfCancellationRequested();
         return locations.ToArray();
     }

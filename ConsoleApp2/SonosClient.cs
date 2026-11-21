@@ -12,9 +12,9 @@ public sealed class SonosException(string message, string? errorCode = null) : E
 
 public sealed class SonosClient(HttpClient http)
 {
-    private const string Transport = "AVTransport";
-    private const string Directory = "ContentDirectory";
-    private static readonly XNamespace Soap = "http://schemas.xmlsoap.org/soap/envelope/";
+    private const string TRANSPORT = "AVTransport";
+    private const string DIRECTORY = "ContentDirectory";
+    private static readonly XNamespace _soap = "http://schemas.xmlsoap.org/soap/envelope/";
 
     public async Task<Speaker> GetSpeakerAsync(Uri descriptionUri, CancellationToken ct)
     {
@@ -29,8 +29,7 @@ public sealed class SonosClient(HttpClient http)
         var baseUrl = Value(document.Root!, "URLBase");
         var baseUri = string.IsNullOrWhiteSpace(baseUrl) ? descriptionUri : new Uri(baseUrl);
         var services = new Dictionary<string, SonosService>(StringComparer.Ordinal);
-        foreach (var service in device.Descendants().Where(e => e.Name.LocalName == "service"))
-        {
+        foreach (var service in device.Descendants().Where(e => e.Name.LocalName == "service")) {
             var type = Value(service, "serviceType");
             var controlUrl = Value(service, "controlURL");
             var parts = type.Split(':');
@@ -38,7 +37,8 @@ public sealed class SonosClient(HttpClient http)
                 services[parts[^2]] = new SonosService(type, new Uri(baseUri, controlUrl));
         }
         var name = Value(device, "roomName");
-        if (string.IsNullOrEmpty(name)) name = Value(device, "friendlyName");
+        if (string.IsNullOrEmpty(name))
+            name = Value(device, "friendlyName");
         return new Speaker(id, string.IsNullOrEmpty(name) ? id : name, descriptionUri, services);
     }
 
@@ -71,21 +71,19 @@ public sealed class SonosClient(HttpClient http)
 
     public async Task<SpeakerStatus> GetStatusAsync(Speaker selected, Speaker coordinator, CancellationToken ct)
     {
-        var transport = await InvokeAsync(coordinator, Transport, "GetTransportInfo", ct, ("InstanceID", "0"));
-        var position = await InvokeAsync(coordinator, Transport, "GetPositionInfo", ct, ("InstanceID", "0"));
+        var transport = await InvokeAsync(coordinator, TRANSPORT, "GetTransportInfo", ct, ("InstanceID", "0"));
+        var position = await InvokeAsync(coordinator, TRANSPORT, "GetPositionInfo", ct, ("InstanceID", "0"));
         var volume = await InvokeAsync(selected, "RenderingControl", "GetVolume", ct, ("InstanceID", "0"), ("Channel", "Master"));
         var mute = await InvokeAsync(selected, "RenderingControl", "GetMute", ct, ("InstanceID", "0"), ("Channel", "Master"));
         var metadata = Value(position, "TrackMetaData");
         LibraryItem? item = null;
-        if (!string.IsNullOrWhiteSpace(metadata) && metadata != "NOT_IMPLEMENTED")
-        {
+        if (!string.IsNullOrWhiteSpace(metadata) && metadata != "NOT_IMPLEMENTED") {
             // Some sources report non-DIDL metadata; status should still show transport and URI.
-            try
-            {
+            try {
                 var element = XDocument.Parse(metadata).Root?.Elements().FirstOrDefault();
-                if (element is not null) item = LibraryItem.FromXml(element);
-            }
-            catch (XmlException) { }
+                if (element is not null)
+                    item = LibraryItem.FromXml(element);
+            } catch (XmlException) { }
         }
         return new SpeakerStatus(Value(transport, "CurrentTransportState"), item?.Title ?? "(no track metadata)",
             item?.Artist ?? "", item?.Album ?? "", Value(position, "RelTime"), Value(position, "TrackDuration"),
@@ -95,15 +93,12 @@ public sealed class SonosClient(HttpClient http)
     public async Task<LibraryPage> BrowseAsync(Speaker speaker, string objectId, int start, int count, CancellationToken ct)
     {
         XElement response;
-        try
-        {
-            response = await InvokeAsync(speaker, Directory, "Browse", ct,
+        try {
+            response = await InvokeAsync(speaker, DIRECTORY, "Browse", ct,
                 ("ObjectID", objectId), ("BrowseFlag", "BrowseDirectChildren"), ("Filter", "*"),
                 ("StartingIndex", start.ToString(CultureInfo.InvariantCulture)),
                 ("RequestedCount", count.ToString(CultureInfo.InvariantCulture)), ("SortCriteria", ""));
-        }
-        catch (SonosException ex) when (ex.ErrorCode == "701")
-        {
+        } catch (SonosException ex) when (ex.ErrorCode == "701") {
             // Sonos uses "No such object" for a search with no matches as well.
             return new LibraryPage([], 0, 0);
         }
@@ -118,23 +113,24 @@ public sealed class SonosClient(HttpClient http)
         if (item.IsContainer || string.IsNullOrWhiteSpace(item.ResourceUri))
             throw new SonosException("Select a song with a playable resource URI.");
         // Append rather than clearing the existing queue, then jump to the returned 1-based position.
-        var added = await InvokeAsync(coordinator, Transport, "AddURIToQueue", ct,
+        var added = await InvokeAsync(coordinator, TRANSPORT, "AddURIToQueue", ct,
             ("InstanceID", "0"), ("EnqueuedURI", item.ResourceUri), ("EnqueuedURIMetaData", item.Metadata),
             ("DesiredFirstTrackNumberEnqueued", "0"), ("EnqueueAsNext", "0"));
         var track = Number(added, "FirstTrackNumberEnqueued");
-        if (track < 1) throw new SonosException("Sonos did not return a valid queue position.");
-        await InvokeAsync(coordinator, Transport, "SetAVTransportURI", ct, ("InstanceID", "0"),
+        if (track < 1)
+            throw new SonosException("Sonos did not return a valid queue position.");
+        await InvokeAsync(coordinator, TRANSPORT, "SetAVTransportURI", ct, ("InstanceID", "0"),
             ("CurrentURI", $"x-rincon-queue:{coordinator.Id}#0"), ("CurrentURIMetaData", ""));
-        await InvokeAsync(coordinator, Transport, "Seek", ct, ("InstanceID", "0"), ("Unit", "TRACK_NR"),
+        await InvokeAsync(coordinator, TRANSPORT, "Seek", ct, ("InstanceID", "0"), ("Unit", "TRACK_NR"),
             ("Target", track.ToString(CultureInfo.InvariantCulture)));
         await ResumeAsync(coordinator, ct);
     }
 
     public Task ResumeAsync(Speaker coordinator, CancellationToken ct) =>
-        InvokeAsync(coordinator, Transport, "Play", ct, ("InstanceID", "0"), ("Speed", "1"));
+        InvokeAsync(coordinator, TRANSPORT, "Play", ct, ("InstanceID", "0"), ("Speed", "1"));
 
     public Task PauseAsync(Speaker coordinator, CancellationToken ct) =>
-        InvokeAsync(coordinator, Transport, "Pause", ct, ("InstanceID", "0"));
+        InvokeAsync(coordinator, TRANSPORT, "Pause", ct, ("InstanceID", "0"));
 
     private async Task<XElement> InvokeAsync(Speaker speaker, string serviceName, string action, CancellationToken ct,
         params (string Name, string Value)[] arguments)
@@ -142,9 +138,9 @@ public sealed class SonosClient(HttpClient http)
         if (!speaker.Services.TryGetValue(serviceName, out var service))
             throw new SonosException($"{speaker.Name} does not support {serviceName}.");
         XNamespace ns = service.Type;
-        var envelope = new XElement(Soap + "Envelope", new XAttribute(XNamespace.Xmlns + "s", Soap),
-            new XAttribute(Soap + "encodingStyle", "http://schemas.xmlsoap.org/soap/encoding/"),
-            new XElement(Soap + "Body", new XElement(ns + action,
+        var envelope = new XElement(_soap + "Envelope", new XAttribute(XNamespace.Xmlns + "s", _soap),
+            new XAttribute(_soap + "encodingStyle", "http://schemas.xmlsoap.org/soap/encoding/"),
+            new XElement(_soap + "Body", new XElement(ns + action,
                 new XAttribute(XNamespace.Xmlns + "u", ns),
                 arguments.Select(a => new XElement(a.Name, a.Value)))));
         using var request = new HttpRequestMessage(HttpMethod.Post, service.ControlUri);
@@ -153,21 +149,19 @@ public sealed class SonosClient(HttpClient http)
         using var response = await http.SendAsync(request, ct);
         var content = await response.Content.ReadAsStringAsync(ct);
         XDocument document;
-        try { document = XDocument.Parse(content); }
-        catch (XmlException ex)
-        {
+        try { document = XDocument.Parse(content); } catch (XmlException ex) {
             throw new SonosException($"{speaker.Name}: {action} returned HTTP {(int)response.StatusCode} with invalid XML: {ex.Message}");
         }
-        var fault = document.Descendants(Soap + "Fault").FirstOrDefault();
-        if (fault is not null)
-        {
+        var fault = document.Descendants(_soap + "Fault").FirstOrDefault();
+        if (fault is not null) {
             var code = Value(fault, "errorCode");
             var description = Value(fault, "errorDescription");
-            if (string.IsNullOrEmpty(description)) description = Value(fault, "faultstring");
+            if (string.IsNullOrEmpty(description))
+                description = Value(fault, "faultstring");
             throw new SonosException($"{speaker.Name}: {action} failed ({code}): {description}", code);
         }
         response.EnsureSuccessStatusCode();
-        return document.Root?.Element(Soap + "Body")?.Elements().FirstOrDefault()
+        return document.Root?.Element(_soap + "Body")?.Elements().FirstOrDefault()
             ?? throw new SonosException($"{speaker.Name}: {action} returned an empty SOAP response.");
     }
 

@@ -1,46 +1,25 @@
-#pragma warning disable IDE0060 // Remove unused parameter
-using AppGraphQL.Extensions;
+using AppGraphQL.OutputModels;
+using AppServices.Sonos;
+
+#pragma warning disable IDE0060 // Cancellation tokens are consumed by the GraphQL.Linq request context.
 
 namespace AppGraphQL;
 
 public sealed class QueryType : DIObjectGraphType<Query> { }
 
-[Authorize(Policy = SecurityPolicies.QUERY_POLICY)]
-public sealed class Query : DIObjectGraphBase
+public sealed class Query(AppDbContext db, SonosService sonos) : DIObjectGraphBase
 {
-    private readonly AppDbContext _db;
-
-    public Query(AppDbContext db)
-    {
-        _db = db;
-    }
-
-    public Task<EfSource<User>> UserAsync([Id] int id, CancellationToken cancellationToken) => _db.Users.ToGraphSingleAsync(x => x.Id == id);
-
-    public Task<Connection<EfSource<User>>> UsersAsync(int? first, int? last, [Id] string? before, [Id] string? after, CancellationToken cancellationToken)
-    {
-        var query = _db.Users.OrderBy(x => x.Id);
-
-        return query.ToGraphConnectionAsync(first, last, after, before, 100);
-    }
-
-    public Task<EfSource<User>> MeAsync(CancellationToken cancellationToken) => _db.Users.ToGraphSingleAsync(x => x.Id == this.GetUserId());
-
-    public Task<EfSource<Post>> PostAsync([Id] int id, CancellationToken cancellationToken) => _db.Posts.ToGraphSingleAsync(x => x.Id == id);
-
-    public Task<Connection<EfSource<Post>>> PostsAsync(int? first, int? last, [Id] string? before, [Id] string? after, CancellationToken cancellationToken)
-    {
-        var query = _db.Posts.OrderBy(x => x.Id);
-
-        return query.ToGraphConnectionAsync(first, last, after, before, 100);
-    }
-
-    public Task<EfSource<Comment>> CommentAsync([Id] int id, CancellationToken cancellationToken) => _db.Comments.ToGraphSingleAsync(x => x.Id == id);
-
-    public static string? Test(IResolveFieldContext context)
-    {
-        var user = context.User;
-        var name = user!.FindFirst("name")?.Value;
-        return name;
-    }
+    public SessionInfo Session() => new(User?.IsInRole("Admin") == true, User?.Identity?.Name);
+    public Task<Connection<EfSource<NetworkGroup>>> GroupsAsync(int? first, int? last, [Id] string? before, [Id] string? after, CancellationToken ct)
+        => db.Groups.OrderBy(x => x.Name).ThenBy(x => x.Id).ToGraphConnectionAsync(first, last, after, before, 100);
+    public Task<Connection<EfSource<Schedule>>> SchedulesAsync([Id] int? groupId, int? first, int? last, [Id] string? before, [Id] string? after, CancellationToken ct)
+        => db.Schedules.Where(x => groupId == null || x.GroupId == groupId).OrderBy(x => x.Name).ThenBy(x => x.Id).ToGraphConnectionAsync(first, last, after, before, 100);
+    [Authorize(Policy = SecurityPolicies.ADMIN_POLICY)]
+    public Task<Connection<EfSource<AdminUser>>> AdminsAsync(int? first, int? last, [Id] string? before, [Id] string? after, CancellationToken ct)
+        => db.Admins.OrderBy(x => x.Id).ToGraphConnectionAsync(first, last, after, before, 100);
+    [Authorize(Policy = SecurityPolicies.ADMIN_POLICY)]
+    public Task<Connection<EfSource<LogEntry>>> LogsAsync(int? first, int? last, [Id] string? before, [Id] string? after, CancellationToken ct)
+        => db.Logs.OrderByDescending(x => x.Id).ToGraphConnectionAsync(first, last, after, before, 100);
+    public async Task<LibraryPageInfo> LibraryAsync([Id] int groupId, string objectId, int start, int count, CancellationToken ct)
+        => LibraryPageInfo.From(await sonos.BrowseAsync(groupId, objectId, start, count, ct));
 }

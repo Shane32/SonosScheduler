@@ -1,91 +1,23 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App.tsx";
-import "./index.css";
-import { BrowserRouter, Routes, Route } from "react-router";
 import { GraphQLClient, GraphQLContext } from "@shane32/graphql";
-import "bootstrap/dist/css/bootstrap.min.css";
-import { OAuthRedirect } from "./components/OAuthRedirect";
-import { LogoutRedirect } from "./components/LogoutRedirect";
-import { AuthProvider, AuthManager } from "@shane32/msoauth";
-import { UserAuthProvider } from "./contexts/UserAuthProvider.tsx";
-
-class TemplateAuthManager extends AuthManager {
-  protected override async getTokenEndpointUrl(grantType: string): Promise<string> {
-    return import.meta.env.PROD ? "/api/oauth/token" : super.getTokenEndpointUrl(grantType);
-  }
-}
-
-// Initialize AuthManager with Azure AD configuration
-const authManager = new TemplateAuthManager({
-  clientId: import.meta.env.VITE_AZURE_CLIENT_ID,
-  authority: `https://login.microsoftonline.com/${import.meta.env.VITE_AZURE_TENANT_ID}/v2.0`,
-  scopes: import.meta.env.VITE_AZURE_SCOPES,
-  redirectUri: "/oauth/callback",
-  navigateCallback: (path: string) => {
-    // A navigate function that uses the browser's history API
-    window.history.replaceState({}, "", path);
-    // Dispatch a popstate event to trigger react-router navigation
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  },
-  logoutRedirectUri: "/oauth/logout",
-});
+import App from "./App";
+import "./styles.scss";
 
 const client = new GraphQLClient({
-  url: import.meta.env.VITE_GRAPHQL_URL,
-  webSocketUrl: import.meta.env.VITE_GRAPHQL_WEBSOCKET_URL,
+  url: "/api/graphql",
   sendDocumentIdAsQuery: true,
-  transformRequest: async (config) => {
-    try {
-      const token = await authManager.getIdToken();
-      return {
-        ...config,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        headers: { ...config.headers, Authorization: `Bearer ${token}` },
-      };
-    } catch {
-      return config;
-    }
-  },
-  generatePayload: async () => {
-    try {
-      const token = await authManager.getIdToken();
-      return {
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        Authorization: `Bearer ${token}`,
-      };
-    } catch {
-      return {};
-    }
-  },
   defaultFetchPolicy: "no-cache",
+  transformRequest: async (request) => ({
+    ...request,
+    credentials: "same-origin",
+    headers: { ...request.headers, "X-Sonos-Request": "1" },
+  }),
 });
-
-// Listen for auth events to reset GraphQL client store
-authManager.addEventListener("login", () => client.resetStore());
-authManager.addEventListener("logout", () => client.resetStore());
-
-const rootElement = document.getElementById("root");
-if (!rootElement) {
-  throw new Error("The root element was not found");
-}
-
-const root = createRoot(rootElement);
-
-root.render(
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <GraphQLContext value={{ client }}>
-      <AuthProvider authManager={authManager}>
-        <UserAuthProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/oauth/callback" element={<OAuthRedirect />} />
-              <Route path="/oauth/logout" element={<LogoutRedirect />} />
-              <Route path="/*" element={<App />} />
-            </Routes>
-          </BrowserRouter>
-        </UserAuthProvider>
-      </AuthProvider>
+      <App />
     </GraphQLContext>
   </StrictMode>,
 );

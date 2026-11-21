@@ -23,10 +23,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("console search preserves case and starts selected song", MenuSearch)
 };
 var failures = 0;
-foreach (var test in tests)
-{
-    try { await test.Run(); Console.WriteLine($"PASS {test.Name}"); }
-    catch (Exception ex) { failures++; Console.Error.WriteLine($"FAIL {test.Name}: {ex}"); }
+foreach (var test in tests) {
+    try { await test.Run(); Console.WriteLine($"PASS {test.Name}"); } catch (Exception ex) { failures++; Console.Error.WriteLine($"FAIL {test.Name}: {ex}"); }
 }
 Console.WriteLine($"{tests.Length - failures}/{tests.Length} checks passed.");
 return failures == 0 ? 0 : 1;
@@ -70,11 +68,9 @@ static Task SubnetRanges()
 static async Task SubnetDiscovery()
 {
     using var fixture = new Fixture();
-    fixture.Override = request => request.Method == "GET" ? request.Host switch
-    {
+    fixture.Override = request => request.Method == "GET" ? request.Host switch {
         "192.0.2.1" => null, // A real Sonos description from the default fixture.
-        "192.0.2.2" => new HttpResponseMessage(HttpStatusCode.OK)
-        {
+        "192.0.2.2" => new HttpResponseMessage(HttpStatusCode.OK) {
             Content = new StringContent("<root><device><UDN>uuid:OTHER_DEVICE</UDN></device></root>")
         },
         "192.0.2.3" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("not XML") },
@@ -108,19 +104,17 @@ static async Task SubnetConcurrency()
     var firstWave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     var active = 0;
     var overlapped = false;
-    fixture.OverrideAsync = async (request, ct) =>
-    {
-        if (request.Method != "GET") return null;
+    fixture.OverrideAsync = async (request, ct) => {
+        if (request.Method != "GET")
+            return null;
         var count = Interlocked.Increment(ref active);
-        try
-        {
+        try {
             Check(count <= 2, "Too many concurrent probes.");
             if (count == 2) { overlapped = true; firstWave.TrySetResult(); }
             await firstWave.Task.WaitAsync(ct);
             await Task.Yield();
             return new HttpResponseMessage(HttpStatusCode.NotFound);
-        }
-        finally { Interlocked.Decrement(ref active); }
+        } finally { Interlocked.Decrement(ref active); }
     };
     using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
     var settings = new SonosSettings { DiscoverySubnet = "192.0.2.0/29", SubnetScanConcurrency = 2 };
@@ -133,8 +127,7 @@ static async Task SubnetConcurrency()
 static async Task SubnetCancellation()
 {
     using var fixture = new Fixture();
-    fixture.OverrideAsync = async (_, ct) =>
-    {
+    fixture.OverrideAsync = async (_, ct) => {
         await Task.Delay(Timeout.InfiniteTimeSpan, ct);
         throw new InvalidOperationException("Probe was not cancelled.");
     };
@@ -143,8 +136,7 @@ static async Task SubnetCancellation()
     var speakers = await new SonosDiscovery(fixture.Client, settings, _ => { }).FindSpeakersAsync(deadline.Token);
     Equal(0, speakers.Count); // The per-probe timeout recovers rather than aborting discovery.
     using var cancelled = new CancellationTokenSource();
-    fixture.OverrideAsync = async (_, ct) =>
-    {
+    fixture.OverrideAsync = async (_, ct) => {
         cancelled.Cancel();
         await Task.Delay(Timeout.InfiniteTimeSpan, ct);
         throw new InvalidOperationException("User cancellation was ignored.");
@@ -299,15 +291,13 @@ static async Task<string> RunMenuAsync(Fixture fixture, string input)
     var previousOut = Console.Out;
     using var writer = new StringWriter();
     using var reader = new StringReader(input);
-    try
-    {
+    try {
         Console.SetIn(reader);
         Console.SetOut(writer);
         var settings = new SonosSettings { SpeakerAddresses = ["kitchen"], LibraryPageSize = 2 };
         await new ConsoleMenu(fixture.Client, new SonosDiscovery(fixture.Client, settings, _ => { }), settings).RunAsync(default);
         return writer.ToString();
-    }
-    finally { Console.SetIn(previousIn); Console.SetOut(previousOut); }
+    } finally { Console.SetIn(previousIn); Console.SetOut(previousOut); }
 }
 
 static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
@@ -323,41 +313,47 @@ static async Task<T> ThrowsAsync<T>(Func<Task> action) where T : Exception
     throw new InvalidOperationException($"Expected {typeof(T).Name}.");
 }
 
-sealed record RecordedRequest(string Method, string Host, string Action, Dictionary<string, string> Arguments);
+internal sealed record RecordedRequest(string Method, string Host, string Action, Dictionary<string, string> Arguments);
 
-sealed class Fixture : HttpMessageHandler
+internal sealed class Fixture : HttpMessageHandler
 {
     public List<RecordedRequest> Requests { get; } = [];
     public Func<RecordedRequest, HttpResponseMessage?>? Override { get; set; }
     public Func<RecordedRequest, CancellationToken, Task<HttpResponseMessage?>>? OverrideAsync { get; set; }
-    private readonly HttpClient http;
+    private readonly HttpClient _http;
     public SonosClient Client { get; }
-    public Fixture() { http = new HttpClient(this); Client = new SonosClient(http); }
+    public Fixture() { _http = new HttpClient(this); Client = new SonosClient(_http); }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (request.Method == HttpMethod.Get)
-        {
+        if (request.Method == HttpMethod.Get) {
             var get = new RecordedRequest("GET", request.RequestUri!.Host, "", []);
-            lock (Requests) Requests.Add(get);
-            if (OverrideAsync is not null && await OverrideAsync(get, cancellationToken) is { } asyncResult) return asyncResult;
-            if (Override?.Invoke(get) is { } result) return result;
+            lock (Requests)
+                Requests.Add(get);
+            if (OverrideAsync is not null && await OverrideAsync(get, cancellationToken) is { } asyncResult)
+                return asyncResult;
+            if (Override?.Invoke(get) is { } result)
+                return result;
             return Xml(Description(request.RequestUri.Host));
         }
         var envelope = XDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
         var action = envelope.Root!.Elements().Single().Elements().Single();
         var recorded = new RecordedRequest("POST", request.RequestUri!.Host, action.Name.LocalName,
             action.Elements().ToDictionary(e => e.Name.LocalName, e => e.Value));
-        lock (Requests) Requests.Add(recorded);
+        lock (Requests)
+            Requests.Add(recorded);
         var header = request.Headers.GetValues("SOAPACTION").Single();
-        if (header != $"\"{action.Name.NamespaceName}#{action.Name.LocalName}\"") throw new InvalidOperationException("Incorrect SOAPAction.");
-        if (request.Content.Headers.ContentType?.MediaType != "text/xml") throw new InvalidOperationException("Incorrect content type.");
-        if (request.RequestUri.AbsolutePath != $"/control/{action.Name.NamespaceName.Split(':')[^2]}") throw new InvalidOperationException("Did not use advertised service URL.");
-        if (Override?.Invoke(recorded) is { } overridden) return overridden;
-        var fields = recorded.Action switch
-        {
-            "GetZoneGroupState" => new[] { Field("ZoneGroupState", Topology) },
+        if (header != $"\"{action.Name.NamespaceName}#{action.Name.LocalName}\"")
+            throw new InvalidOperationException("Incorrect SOAPAction.");
+        if (request.Content.Headers.ContentType?.MediaType != "text/xml")
+            throw new InvalidOperationException("Incorrect content type.");
+        if (request.RequestUri.AbsolutePath != $"/control/{action.Name.NamespaceName.Split(':')[^2]}")
+            throw new InvalidOperationException("Did not use advertised service URL.");
+        if (Override?.Invoke(recorded) is { } overridden)
+            return overridden;
+        var fields = recorded.Action switch {
+            "GetZoneGroupState" => new[] { Field("ZoneGroupState", TOPOLOGY) },
             "Browse" => [Field("Result", Didl), Field("NumberReturned", "1"), Field("TotalMatches", "30")],
             "GetTransportInfo" => [Field("CurrentTransportState", "PLAYING")],
             "GetPositionInfo" => [Field("TrackMetaData", Didl), Field("TrackURI", "x-file-cifs://nas/Music/song.flac"), Field("RelTime", "0:01:02"), Field("TrackDuration", "0:03:45")],
@@ -403,7 +399,7 @@ sealed class Fixture : HttpMessageHandler
                 new XElement(ns + "serviceType", $"urn:schemas-upnp-org:service:{s}:1"),
                 new XElement(ns + "controlURL", $"/control/{s}")))))).ToString();
     }
-    private const string Topology = """
+    private const string TOPOLOGY = """
         <ZoneGroupState><ZoneGroups><ZoneGroup Coordinator="RINCON_LIVING" ID="group:1">
           <ZoneGroupMember UUID="RINCON_LIVING" ZoneName="Living room" Location="http://living:1400/xml/device_description.xml">
             <Satellite UUID="RINCON_SATELLITE" ZoneName="Surround" Location="http://satellite:1400/xml/device_description.xml" />

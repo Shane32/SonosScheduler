@@ -5,16 +5,16 @@ namespace SonosController;
 
 public sealed class IPv4Subnet
 {
-    private readonly uint network;
-    private readonly int prefixLength;
+    private readonly uint _network;
+    private readonly int _prefixLength;
 
     private IPv4Subnet(uint network, int prefixLength)
     {
-        this.network = network;
-        this.prefixLength = prefixLength;
+        _network = network;
+        _prefixLength = prefixLength;
     }
 
-    public int HostCount => prefixLength >= 31 ? 1 << (32 - prefixLength) : (1 << (32 - prefixLength)) - 2;
+    public int HostCount => _prefixLength >= 31 ? 1 << (32 - _prefixLength) : (1 << (32 - _prefixLength)) - 2;
 
     public static IPv4Subnet Parse(string cidr)
     {
@@ -34,12 +34,12 @@ public sealed class IPv4Subnet
     public IEnumerable<IPAddress> GetHostAddresses()
     {
         // /31 point-to-point ranges and /32 single-host ranges have no reserved endpoints.
-        var first = prefixLength >= 31 ? network : network + 1;
+        var first = _prefixLength >= 31 ? _network : _network + 1;
         for (var i = 0; i < HostCount; i++)
             yield return Address(first + (uint)i);
     }
 
-    public override string ToString() => $"{Address(network)}/{prefixLength}";
+    public override string ToString() => $"{Address(_network)}/{_prefixLength}";
 
     private static IPAddress Address(uint value) =>
         new(new byte[] { (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value });
