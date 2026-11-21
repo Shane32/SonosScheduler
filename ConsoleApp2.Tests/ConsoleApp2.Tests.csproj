@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Remove="AppDb;AppDb.Models;Microsoft.EntityFrameworkCore;Microsoft.Extensions.DependencyInjection" />
+    <ProjectReference Include="../ConsoleApp2/ConsoleApp2.csproj" />
+  </ItemGroup>
+</Project>
