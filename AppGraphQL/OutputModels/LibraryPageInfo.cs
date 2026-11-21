@@ -3,12 +3,6 @@ using AppServices.Sonos;
 namespace AppGraphQL.OutputModels;
 
 [MapAutoClrType]
-public sealed record SessionInfo(bool IsAdmin, string? Name);
-
-[MapAutoClrType]
-public sealed record LibraryItemInfo(string Id, string Title, string Artist, string Album, bool IsContainer, string ResourceUri, string Metadata);
-
-[MapAutoClrType]
 public sealed record LibraryPageInfo(IReadOnlyList<LibraryItemInfo> Items, int NumberReturned, int TotalMatches)
 {
     [Ignore]

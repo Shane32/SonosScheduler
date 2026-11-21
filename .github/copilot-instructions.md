@@ -1,5 +1,10 @@
 # Copilot Instructions for .NET Projects
 
+## Code Organization
+
+Keep each top-level C# class, record, struct, interface, and enum in its own file, named for the type.
+Small nested types that directly support their containing class may stay in that file.
+
 ## Completion Requirements
 
 Before completing any task or pull request, always run:

@@ -5,11 +5,6 @@ using System.Xml.Linq;
 
 namespace SonosController;
 
-public sealed class SonosException(string message, string? errorCode = null) : Exception(message)
-{
-    public string? ErrorCode { get; } = errorCode;
-}
-
 public sealed class SonosClient(HttpClient http)
 {
     private const string TRANSPORT = "AVTransport";

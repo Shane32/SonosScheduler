@@ -1,15 +1,6 @@
 using System.Xml.Linq;
 
-namespace AppServices.Sonos;
-
-public sealed record SonosEndpoint(string Type, Uri ControlUri);
-public sealed record Speaker(string Id, string Name, Uri DescriptionUri, IReadOnlyDictionary<string, SonosEndpoint> Services);
-public sealed record GroupMember(string Id, string Name, Uri DescriptionUri, bool Visible);
-public sealed record SpeakerGroup(string CoordinatorId, IReadOnlyList<GroupMember> Members);
-public sealed record PlaybackTarget(Speaker Coordinator, IReadOnlyList<string> Rooms);
-public sealed record SpeakerStatus(string State, string Title, string Artist, string Album,
-    string Position, string Duration, string TrackUri, string Volume, bool Muted);
-public sealed record LibraryPage(IReadOnlyList<LibraryItem> Items, int NumberReturned, int TotalMatches);
+namespace SonosController;
 
 public sealed record LibraryItem(string Id, string Title, string Artist, string Album, bool IsContainer,
     string ResourceUri, string Metadata)

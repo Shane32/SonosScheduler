@@ -5,8 +5,6 @@ using AppServices.Sonos;
 
 namespace AppGraphQL;
 
-public sealed class QueryType : DIObjectGraphType<Query> { }
-
 public sealed class Query(AppDbContext db, SonosService sonos) : DIObjectGraphBase
 {
     public SessionInfo Session() => new(User?.IsInRole("Admin") == true, User?.Identity?.Name);
