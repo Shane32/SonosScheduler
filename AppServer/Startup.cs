@@ -1,13 +1,10 @@
-using System.Security.Claims;
-using System.Threading.RateLimiting;
 using AppGraphQL;
 using AppServices;
 using GraphQL.AspNetCore3;
 using GraphQL.Types;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.IdentityModel.Tokens;
 
 namespace AppServer;
 
@@ -15,23 +12,31 @@ public sealed class Startup(IConfiguration configuration)
 {
     public void ConfigureServices(IServiceCollection services)
     {
-        services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(options => {
-            options.Cookie.Name = "SonosScheduler.Admin";
-            options.Cookie.HttpOnly = true;
-            options.Cookie.SameSite = SameSiteMode.Strict;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-            options.ExpireTimeSpan = TimeSpan.FromHours(8);
-            options.SlidingExpiration = true;
-            options.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; return Task.CompletedTask; };
-            options.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; return Task.CompletedTask; };
-            options.Events.OnValidatePrincipal = async ctx => {
-                var id = ctx.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
-                var stamp = ctx.Principal?.FindFirstValue("stamp");
-                var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
-                if (!int.TryParse(id, out var adminId) || !await db.Admins.AnyAsync(x => x.Id == adminId && x.SecurityStamp == stamp, ctx.HttpContext.RequestAborted)) {
-                    ctx.RejectPrincipal();
-                    await ctx.HttpContext.SignOutAsync();
-                }
+        var entra = EntraConfiguration.Read(configuration);
+        services.AddSingleton(entra);
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => {
+            options.MapInboundClaims = false;
+            if (entra.Enabled) {
+                options.Authority = entra.Authority;
+                options.Audience = entra.ClientId;
+            }
+            options.TokenValidationParameters = new TokenValidationParameters {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                RequireSignedTokens = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = entra.Authority,
+                ValidAudience = entra.ClientId,
+                ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+                NameClaimType = "name",
+                RoleClaimType = System.Security.Claims.ClaimTypes.Role,
+                ClockSkew = TimeSpan.FromMinutes(1)
+            };
+            options.Events.OnTokenValidated = async context => {
+                if (context.Principal?.Identity is not System.Security.Claims.ClaimsIdentity identity ||
+                    !await context.HttpContext.RequestServices.GetRequiredService<EntraIdentityService>().ApplyAsync(identity, context.HttpContext.RequestAborted))
+                    context.Fail("A delegated Entra access token for the configured tenant is required.");
             };
         });
         services.AddAuthorization(ConfigureAuthorizationOptions);
@@ -41,12 +46,7 @@ public sealed class Startup(IConfiguration configuration)
         services.AddAutoMapper((provider, config) => config.AddProfile(provider.GetRequiredService<AppGraphQL.AutoMapper.AutoMapperProfile>()), typeof(Program).Assembly);
         services.AddRouting();
         services.AddControllers();
-        services.AddRateLimiter(options => {
-            options.RejectionStatusCode = 429;
-            options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
-                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
-        });
+        services.AddHttpsRedirection(options => options.HttpsPort = 443);
         services.AddResponseCompression(options => {
             options.EnableForHttps = true;
             options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Append("application/graphql-response+json");
@@ -57,6 +57,8 @@ public sealed class Startup(IConfiguration configuration)
 
     public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
     {
+        if (env.IsProduction())
+            app.UseHttpsRedirection();
         app.UseResponseCompression();
         app.Use(async (context, next) => {
             if (context.Request.Path.StartsWithSegments("/api") && HttpMethods.IsPost(context.Request.Method)) {
@@ -90,11 +92,10 @@ public sealed class Startup(IConfiguration configuration)
             });
         });
         app.UseRouting();
-        app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseGraphQL("/api/graphql", options => {
-            options.AuthorizationRequired = false;
+            options.AuthorizationRequired = EntraConfiguration.Read(configuration).RequireSignIn;
             options.HandleGet = false;
             options.EnableBatchedRequests = false;
             options.ReadQueryStringOnPost = true;
@@ -121,7 +122,7 @@ public sealed class Startup(IConfiguration configuration)
             scope.ServiceProvider.GetRequiredService<AuditService>().Add("Schedule", run.Message, run.ScheduleId, "Warning");
         }
         await db.SaveChangesAsync(ct);
-        await scope.ServiceProvider.GetRequiredService<AdminService>().BootstrapAsync(configuration, ct);
+        await scope.ServiceProvider.GetRequiredService<AdminService>().BootstrapAsync(ct);
     }
 
     internal static void ConfigureAuthorizationOptions(Microsoft.AspNetCore.Authorization.AuthorizationOptions options)

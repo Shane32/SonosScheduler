@@ -8,9 +8,12 @@ import { dateTime, stateLabel } from "./shared";
 import { LibraryPicker } from "./LibraryPicker";
 import { Schedules } from "./Schedules";
 import { Admin } from "./Admin";
+import { useSonosAuth } from "./auth";
+import { SignOutButton } from "./Authentication";
 
 export default function App() {
-  const [tab, setTab] = useState("rooms");
+  const [tab, setTab] = useState(() => (window.location.hash === "#admin" ? "admin" : "rooms"));
+  const { authenticated } = useSonosAuth();
   const [groupId, setGroupId] = useState("");
   const [speakerId, setSpeakerId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,7 +62,10 @@ export default function App() {
               Sonos <strong>Scheduler</strong>
             </span>
           </a>
-          <span className="network-label">Local listening</span>
+          <div className="d-flex flex-wrap align-items-center justify-content-end gap-2">
+            <span className="network-label">Local listening</span>
+            {authenticated && <SignOutButton />}
+          </div>
         </div>
       </header>
       <main className="container-fluid app-width py-4 py-lg-5">

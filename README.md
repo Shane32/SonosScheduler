@@ -11,12 +11,12 @@ A local-network Sonos controller and scheduler built with React, Bootstrap/Sass,
 
 Install the SDK in `global.json`, Node/npm from `ReactApp/package.json`, and SQL Server LocalDB.
 
-1. Configure the first admin with `Admin:BootstrapName` and `Admin:BootstrapPassword` in an ignored `AppServer/appsettings.Local.json` (12+ character password).
+1. Register an Entra single-page application and configure `Entra:TenantId`, `Entra:ClientId`, and `Entra:BootstrapAdminObjectId` with `dotnet user-secrets set --project AppServer`. See [authentication setup](docs/deployment.md#entra-registration-and-private-configuration).
 2. Run `npm ci --ignore-scripts` and `npm run dev` in `ReactApp`.
 3. Run `dotnet run --project AppServer --launch-profile http` and open `http://localhost:5145`.
-4. Sign in to Admin, add your speaker subnet, and refresh speakers.
+4. Sign in with Microsoft, open Admin, add your speaker subnet, and refresh speakers.
 
-LAN visitors can control rooms and schedules without signing in. Only administrators can configure networks, manage administrators, and read logs.
+LAN visitors can control rooms and schedules without signing in by default; set `Entra:RequireSignIn` to require Entra sign-in. Only granted Entra administrators can configure networks, manage administrators, and read logs. The database stores administrator tenant/object IDs, with no local usernames or passwords. Keep private configuration in User Secrets for development and protected server configuration for IIS.
 
 ## Build and deploy
 

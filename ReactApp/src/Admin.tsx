@@ -4,6 +4,8 @@ import { Modal } from "react-bootstrap";
 import * as Q from "./App.queries.g";
 import type { NetworkGroup, RunAction } from "./shared";
 import { dateTime } from "./shared";
+import { useSonosAuth } from "./auth";
+import { SignInButton, SignOutButton } from "./Authentication";
 
 export function Admin({
   groups,
@@ -21,11 +23,9 @@ export function Admin({
   onSessionChange: () => void;
 }) {
   const [section, setSection] = useState("networks");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const { config, authenticated } = useSonosAuth();
   const [editing, setEditing] = useState<NetworkGroup | "new">();
-  const [newName, setNewName] = useState("");
-  const [newPassword, setNewPassword] = useState("");
+  const [objectId, setObjectId] = useState("");
   const [after, setAfter] = useState<string>();
   const admins = useQuery(Q.SonosAdminsDocument, { skip: !isAdmin || section !== "admins" });
   const logs = useQuery(Q.SonosLogsDocument, { variables: { after }, skip: !isAdmin || section !== "logs" });
@@ -34,68 +34,22 @@ export function Admin({
   const [deleteGroup] = useMutation(Q.SonosDeleteGroupDocument);
   const [addAdmin] = useMutation(Q.SonosAddAdminDocument);
   const [deleteAdmin] = useMutation(Q.SonosDeleteAdminDocument);
-  async function auth(path: string, body?: object) {
-    const response = await fetch(`${import.meta.env.BASE_URL}api/admin/${path}`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Sonos-Request": "1" },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!response.ok)
-      throw new Error(
-        response.status === 429
-          ? "Too many sign-in attempts. Try again in a minute."
-          : "Sign-in failed. Check the administrator name and password.",
-      );
-    setPassword("");
-    onSessionChange();
-  }
   if (!isAdmin)
     return (
       <section className="card admin-login">
         <div className="card-body p-4 p-lg-5">
           <span className="eyebrow">ADMINISTRATOR ACCESS</span>
-          <h2 className="h4">A little behind the scenes.</h2>
+          <h2 className="h4">Manage your listening spaces.</h2>
           <p className="text-body-secondary">
-            Sign in to manage networks, administrators, and logs. Everyone on your LAN can use speakers and schedules.
+            {authenticated
+              ? "Your Microsoft account does not have administrator access. Ask an existing administrator to add your Entra user object ID."
+              : "Sign in with your Microsoft work or school account to manage networks, administrators, and logs."}
+            {!config.requireSignIn && " Everyone on your LAN can use speakers and schedules."}
           </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(() => auth("login", { name: username, password }));
-            }}
-          >
-            <label className="form-label" htmlFor="admin-name">
-              Administrator name
-            </label>
-            <input
-              id="admin-name"
-              className="form-control mb-3"
-              required
-              maxLength={100}
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <label className="form-label" htmlFor="admin-password">
-              Password
-            </label>
-            <input
-              id="admin-password"
-              className="form-control mb-4"
-              required
-              maxLength={200}
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <button className="btn btn-primary" disabled={busy}>
-              Sign in
-            </button>
-          </form>
+          {authenticated ? <SignOutButton /> : <SignInButton admin />}
           <p className="small text-body-secondary mt-4 mb-0">
-            The first administrator is configured on the server. See the deployment guide for setup.
+            The first administrator is configured on the server using an Entra object ID. The application stores administrator permissions
+            only.
           </p>
         </div>
       </section>
@@ -121,9 +75,7 @@ export function Admin({
         </nav>
         <div className="d-flex align-items-center gap-3">
           <span className="small text-body-secondary">{name}</span>
-          <button className="btn btn-sm btn-outline-secondary" disabled={busy} onClick={() => void run(() => auth("logout"))}>
-            Sign out
-          </button>
+          <SignOutButton />
         </div>
       </div>
       {section === "networks" && (
@@ -202,12 +154,15 @@ export function Admin({
                 {admins.loading && <p role="status">Loading administrators…</p>}
                 {admins.data?.admins.items.map((a) => (
                   <div className="admin-row" key={a.id}>
-                    <span>{a.name}</span>
+                    <span className="text-break">
+                      <code>{a.objectId}</code>
+                      <small className="d-block text-body-secondary">Tenant: {a.tenantId}</small>
+                    </span>
                     <button
                       className="btn btn-sm btn-outline-danger"
                       disabled={busy || admins.data!.admins.items.length < 2}
                       onClick={() => {
-                        if (confirm(`Remove administrator “${a.name}”?`))
+                        if (confirm(`Remove administrator ${a.objectId}?`))
                           void run(() => deleteAdmin({ variables: { id: a.id } }), "Administrator removed.").then((ok) => {
                             if (ok) {
                               admins.refetch();
@@ -229,10 +184,9 @@ export function Admin({
               className="card card-body"
               onSubmit={(e) => {
                 e.preventDefault();
-                void run(() => addAdmin({ variables: { name: newName, password: newPassword } }), "Administrator added.").then((ok) => {
+                void run(() => addAdmin({ variables: { objectId: objectId.trim() } }), "Administrator added.").then((ok) => {
                   if (ok) {
-                    setNewName("");
-                    setNewPassword("");
+                    setObjectId("");
                     admins.refetch();
                   }
                 });
@@ -240,31 +194,24 @@ export function Admin({
             >
               <h2 className="h5 mb-4">Add administrator</h2>
               <label className="form-label" htmlFor="new-admin">
-                Name
+                Entra user object ID
               </label>
               <input
                 id="new-admin"
                 className="form-control mb-3"
                 required
-                maxLength={100}
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                maxLength={36}
+                minLength={36}
+                pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+                placeholder="00000000-0000-0000-0000-000000000000"
+                aria-describedby="admin-object-help"
+                value={objectId}
+                onChange={(e) => setObjectId(e.target.value)}
               />
-              <label className="form-label" htmlFor="new-password">
-                Password
-              </label>
-              <input
-                id="new-password"
-                type="password"
-                className="form-control"
-                required
-                minLength={12}
-                maxLength={200}
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-              />
-              <small className="text-body-secondary mt-2 mb-4">Use at least 12 characters.</small>
+              <p id="admin-object-help" className="small text-body-secondary mb-4">
+                Copy the user's Object ID from Microsoft Entra ID → Users → the user's Overview. Use an account in this application's
+                tenant. This immutable ID identifies the Microsoft account; no local sign-in credentials are created.
+              </p>
               <button className="btn btn-primary align-self-start" disabled={busy}>
                 Add administrator
               </button>

@@ -2,7 +2,9 @@
 
 Run the application tests with `dotnet test Tests`. They use SQLite and a fake Sonos HTTP transport, not speakers on the developer's LAN. The schema and representative GraphQL results use reviewed approval files. SQL Server rowversion is omitted in the SQLite fixture; run generated migrations against LocalDB to check the real SQL Server schema.
 
-Covered behavior includes anonymous dashboard access, administrator authorization, schedule creation/editing/pause/delete, audit entries, unexpected GraphQL exceptions, timezone/DST/midnight/grace-window scheduling, duplicate execution suppression, cached and fallback discovery, offline rooms, recursive NAS selections, metadata preservation, coordinator delegation, idle-only playback, and service URL confinement.
+Covered behavior includes anonymous dashboard access, administrator authorization, immutable Entra grants and bootstrap, duplicate-grant rejection, last-administrator protection, identifier-based audit entries, schedule creation/editing/pause/delete, unexpected GraphQL exceptions, timezone/DST/midnight/grace-window scheduling, duplicate execution suppression, cached and fallback discovery, offline rooms, recursive NAS selections, metadata preservation, coordinator delegation, idle-only playback, and service URL confinement.
+
+Authentication tests use synthetic identities and placeholder GUIDs; they do not contact Entra or require real credentials in the repository. Check the real sign-in separately against a private test registration: confirm PKCE sign-in, the API scope/audience, rejection of another tenant's token, administrator denial for an ungranted account, and immediate loss of administrator access after its grant is removed. With `Entra:RequireSignIn=false`, anonymous room and schedule access should work; with it enabled, those API calls must require a valid token. Confirm that admin operations require a database grant in either mode.
 
 The retained console reference also has a deterministic protocol harness:
 
@@ -22,5 +24,6 @@ For a real installation, verify:
 - A near-future schedule with idle rooms and currently playing rooms, including a mixed selection.
 - Phone and iPad portrait/landscape layouts, keyboard use, and scrollable dialogs.
 - IIS schedules firing while no browser is open, and correct recovery after reboot/recycle.
+- Microsoft sign-in and sign-out on the deployed HTTPS origin, including a child application path when configured.
 
 Hardware and browser checks require the target network and working browser automation or manual inspection; a protocol simulation cannot establish device-firmware compatibility or visual layout correctness.

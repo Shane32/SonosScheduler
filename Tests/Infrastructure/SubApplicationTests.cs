@@ -1,38 +1,48 @@
+using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using AppServices;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 
 namespace Infrastructure;
 
-public sealed class SubApplicationTests : TestBase
+public sealed class SubApplicationTests : EntraTestBase
 {
     protected override void ConfigureWebHostBuilder(IWebHostBuilder webHostBuilder)
     {
         base.ConfigureWebHostBuilder(webHostBuilder);
-        webHostBuilder.ConfigureTestServices(services => {
-            services.AddSingleton<IStartupFilter, SubApplicationStartupFilter>();
-            services.AddSingleton<IDataProtectionProvider, EphemeralDataProtectionProvider>();
-        });
+        webHostBuilder.ConfigureTestServices(services => services.AddSingleton<IStartupFilter, SubApplicationStartupFilter>());
     }
 
     protected override string GetGraphQLPath() => "/music/api/graphql";
 
     [Fact]
-    public async Task ApiAndAdministratorCookieUseApplicationPath()
+    public async Task PublicAuthenticationConfigurationUsesApplicationPath()
     {
-        await Services.GetRequiredService<AdminService>().AddAsync("test-admin", "test-password-123", CancellationToken.None);
-        Client.DefaultRequestHeaders.Add("X-Sonos-Request", "1");
-        using var response = await Client.PostAsJsonAsync("/music/api/admin/login", new { Name = "test-admin", Password = "test-password-123" }, CancellationToken.None);
+        using var response = await Client.GetAsync("/music/api/auth/config", CancellationToken.None);
         response.EnsureSuccessStatusCode();
-        var cookie = response.Headers.GetValues("Set-Cookie").Single();
-        cookie.ShouldContain("path=/music");
-        cookie.ShouldContain("httponly");
-        cookie.ShouldContain("samesite=strict");
-        var result = await RunQueryAsync("{ __typename }");
-        result.Errors.ShouldBeNull();
+        var configuration = await response.Content.ReadFromJsonAsync<JsonElement>(CancellationToken.None);
+        configuration.GetProperty("enabled").GetBoolean().ShouldBeTrue();
+        configuration.GetProperty("clientId").GetString().ShouldBe(ClientId.ToString("D"));
+        configuration.GetProperty("authority").GetString().ShouldBe(Issuer);
+        configuration.GetProperty("redirectUri").GetString().ShouldBe("/music/oauth/callback");
+        configuration.GetProperty("logoutRedirectUri").GetString().ShouldBe("/music/oauth/logout");
+        configuration.GetProperty("requireSignIn").GetBoolean().ShouldBeTrue();
+        configuration.GetProperty("scopes").GetString().ShouldBe($"openid profile offline_access api://{ClientId:D}/access_as_user");
+        response.Headers.Contains("Set-Cookie").ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task BearerAuthenticationWorksUnderApplicationPathAndPasswordLoginIsAbsent()
+    {
+        using var result = await ReadGraphQLAsync("{ session { isAdmin name } }", CreateToken());
+        result.RootElement.GetProperty("data").GetProperty("session").GetProperty("name").GetString().ShouldBe("Entra test user");
+        Client.DefaultRequestHeaders.Add("X-Sonos-Request", "1");
+        Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", CreateToken());
+        using var login = await Client.PostAsJsonAsync("/music/api/admin/login", new { Name = "unused", Password = "unused" }, CancellationToken.None);
+        login.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
     private sealed class SubApplicationStartupFilter : IStartupFilter

@@ -1,36 +1,33 @@
 using System.Data;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 
 namespace AppServices;
 
-public sealed class AdminService(AppDbContext db, AuditService audit)
+public sealed class AdminService(AppDbContext db, AuditService audit, IConfiguration configuration)
 {
-    private readonly PasswordHasher<AdminUser> _hasher = new();
-
-    public async Task BootstrapAsync(IConfiguration configuration, CancellationToken ct)
+    public async Task BootstrapAsync(CancellationToken ct)
     {
-        if (await db.Admins.AnyAsync(ct))
+        if (await db.Administrators.AnyAsync(ct))
             return;
-        var name = configuration["Admin:BootstrapName"];
-        var password = configuration["Admin:BootstrapPassword"];
-        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrEmpty(password))
+        var configuredObjectId = configuration["Entra:BootstrapAdminObjectId"];
+        if (string.IsNullOrWhiteSpace(configuredObjectId))
             return;
-        await AddAsync(name, password, ct);
+        if (!Guid.TryParse(configuredObjectId, out var objectId))
+            throw new InvalidOperationException("The bootstrap administrator object ID must be a valid GUID.");
+        await AddAsync(objectId, ct);
     }
 
-    public async Task<AdminUser> AddAsync(string name, string password, CancellationToken ct)
+    public async Task<AdministratorGrant> AddAsync(Guid objectId, CancellationToken ct)
     {
-        name = name.Trim();
-        if (name.Length is < 1 or > 100 || password.Length is < 12 or > 200)
-            throw new ClientError("Administrator names require 1–100 characters; passwords require 12–200 characters.");
-        var normalized = name.ToUpperInvariant();
-        if (await db.Admins.AnyAsync(x => x.NormalizedName == normalized, ct))
-            throw new ClientError("An administrator with this name already exists.");
-        var admin = new AdminUser { Name = name, NormalizedName = normalized };
-        admin.PasswordHash = _hasher.HashPassword(admin, password);
-        db.Admins.Add(admin);
-        audit.Add("Admin", $"Added administrator '{name}'.");
+        if (objectId == Guid.Empty)
+            throw new ClientError("An administrator object ID is required.");
+        if (!Guid.TryParse(configuration["Entra:TenantId"], out var tenantId) || tenantId == Guid.Empty)
+            throw new InvalidOperationException("An Entra tenant ID must be configured before granting administrator access.");
+        if (await db.Administrators.AnyAsync(x => x.TenantId == tenantId && x.ObjectId == objectId, ct))
+            throw new ClientError("This Entra account is already an administrator.");
+        var admin = new AdministratorGrant { TenantId = tenantId, ObjectId = objectId };
+        db.Administrators.Add(admin);
+        audit.Add("Admin", $"Granted administrator access to Entra object '{objectId:D}' in tenant '{tenantId:D}'.");
         await db.SaveChangesAsync(ct);
         return admin;
     }
@@ -38,29 +35,12 @@ public sealed class AdminService(AppDbContext db, AuditService audit)
     public async Task DeleteAsync(int id, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        if (await db.Admins.CountAsync(ct) <= 1)
+        if (await db.Administrators.CountAsync(ct) <= 1)
             throw new ClientError("At least one administrator must remain.");
-        var admin = await db.Admins.SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new ClientError("Administrator not found.");
-        db.Admins.Remove(admin);
-        audit.Add("Admin", $"Removed administrator '{admin.Name}'.");
+        var admin = await db.Administrators.SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new ClientError("Administrator not found.");
+        db.Administrators.Remove(admin);
+        audit.Add("Admin", $"Revoked administrator access from Entra object '{admin.ObjectId:D}' in tenant '{admin.TenantId:D}'.");
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-    }
-
-    public async Task<AdminUser?> ValidateAsync(string name, string password, CancellationToken ct)
-    {
-        if (name.Length > 100 || password.Length > 200)
-            return null;
-        var normalized = name.Trim().ToUpperInvariant();
-        var admin = await db.Admins.SingleOrDefaultAsync(x => x.NormalizedName == normalized, ct);
-        if (admin is null) { _ = _hasher.HashPassword(new AdminUser(), password); return null; }
-        var result = _hasher.VerifyHashedPassword(admin, admin.PasswordHash, password);
-        if (result == PasswordVerificationResult.Failed)
-            return null;
-        if (result == PasswordVerificationResult.SuccessRehashNeeded) {
-            admin.PasswordHash = _hasher.HashPassword(admin, password);
-            await db.SaveChangesAsync(ct);
-        }
-        return admin;
     }
 }

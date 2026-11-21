@@ -94,7 +94,8 @@ gql`
     admins(first: 100) {
       items {
         id
-        name
+        tenantId
+        objectId
       }
     }
   }
@@ -219,9 +220,9 @@ gql`
   }
 `;
 gql`
-  mutation SonosAddAdmin($name: String!, $password: String!) {
+  mutation SonosAddAdmin($objectId: ID!) {
     admins {
-      add(name: $name, password: $password) {
+      add(objectId: $objectId) {
         id
       }
     }

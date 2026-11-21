@@ -8,7 +8,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ScheduleSpeaker> ScheduleSpeakers => Set<ScheduleSpeaker>();
     public DbSet<ScheduleExclusion> ScheduleExclusions => Set<ScheduleExclusion>();
     public DbSet<ScheduleRun> ScheduleRuns => Set<ScheduleRun>();
-    public DbSet<AdminUser> Admins => Set<AdminUser>();
+    public DbSet<AdministratorGrant> Administrators => Set<AdministratorGrant>();
     public DbSet<LogEntry> Logs => Set<LogEntry>();
     public static string? Schema => null; //set to a string like "app" to use a specific schema
 

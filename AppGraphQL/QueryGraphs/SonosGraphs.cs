@@ -68,9 +68,9 @@ public sealed class ScheduleExclusionGraphType : EfObjectGraphType<AppDbContext,
     public ScheduleExclusionGraphType() { EfIdField(x => x.Id); EfField(x => x.Date); EfField(x => x.Reason); }
 }
 
-public sealed class AdminUserGraphType : EfObjectGraphType<AppDbContext, AdminUser>
+public sealed class AdministratorGrantGraphType : EfObjectGraphType<AppDbContext, AdministratorGrant>
 {
-    public AdminUserGraphType() { EfIdField(x => x.Id); EfField(x => x.Name); }
+    public AdministratorGrantGraphType() { EfIdField(x => x.Id); EfField(x => x.TenantId); EfField(x => x.ObjectId); }
 }
 
 public sealed class LogEntryGraphType : EfObjectGraphType<AppDbContext, LogEntry>

@@ -1,31 +1,32 @@
-type AdminMutation {
-  add(name: String!, password: String!): AdminUser!
-  delete(id: ID!): Boolean!
-}
-
-type AdminUser {
+type AdministratorGrant {
   id: ID!
-  name: String!
+  objectId: ID!
+  tenantId: ID!
 }
 
-"A connection from an object to a list of objects of type 'AdminUser'."
-type AdminUserConnection {
+"A connection from an object to a list of objects of type 'AdministratorGrant'."
+type AdministratorGrantConnection {
   "A list of all of the edges returned in the connection."
-  edges: [AdminUserEdge!]!
+  edges: [AdministratorGrantEdge!]!
   "A list of all of the objects returned in the connection. This is a convenience field provided for quickly exploring the API; rather than querying for \"{ edges { node } }\" when no edge data is needed, this field can be used instead. Note that when clients like Relay need to fetch the \"cursor\" field on the edge to enable efficient pagination, this shortcut cannot be used, and the full \"{ edges { node } } \" version should be used instead."
-  items: [AdminUser!]!
+  items: [AdministratorGrant!]!
   "Information to aid in pagination."
   pageInfo: PageInfo!
   "A count of the total number of objects in this connection, ignoring pagination. This allows a client to fetch the first five objects by passing \"5\" as the argument to `first`, then fetch the total count so it could display \"5 of 83\", for example. In cases where we employ infinite scrolling or don't have an exact count of entries, this field will return `null`."
   totalCount: Int!
 }
 
-"An edge in a connection from an object to another object of type 'AdminUser'."
-type AdminUserEdge {
+"An edge in a connection from an object to another object of type 'AdministratorGrant'."
+type AdministratorGrantEdge {
   "A cursor for use in pagination"
   cursor: String!
   "The item at the end of the edge"
-  node: AdminUser!
+  node: AdministratorGrant!
+}
+
+type AdminMutation {
+  add(objectId: ID!): AdministratorGrant!
+  delete(id: ID!): Boolean!
 }
 
 "The `DateTimeOffset` scalar type represents a date, time and offset from UTC. `DateTimeOffset` expects timestamps to be formatted in accordance with the [ISO-8601](https://en.wikipedia.org/wiki/ISO_8601) standard."
@@ -141,7 +142,7 @@ type PageInfo {
 }
 
 type Query {
-  admins(after: ID, before: ID, first: Int, last: Int): AdminUserConnection!
+  admins(after: ID, before: ID, first: Int, last: Int): AdministratorGrantConnection!
   groups(after: ID, before: ID, first: Int, last: Int): NetworkGroupConnection!
   library(count: Int!, groupId: ID!, objectId: String!, start: Int!): LibraryPageInfo!
   logs(after: ID, before: ID, first: Int, last: Int): LogEntryConnection!

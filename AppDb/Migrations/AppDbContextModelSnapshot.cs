@@ -16,7 +16,7 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261121161706_SonosScheduler";
+    public override string LastMigrationId => "20261121204621_EntraAdministratorGrants";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -27,7 +27,7 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
 
         SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-        modelBuilder.Entity("AppDb.Models.AdminUser", b =>
+        modelBuilder.Entity("AppDb.Models.AdministratorGrant", b =>
             {
                 var id = b.Property<int>("Id")
                     .ValueGeneratedOnAdd()
@@ -35,32 +35,18 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
 
                 SqlServerPropertyBuilderExtensions.UseIdentityColumn(id);
 
-                b.Property<string>("Name")
-                    .IsRequired()
-                    .HasMaxLength(100)
-                    .HasColumnType("nvarchar(100)");
+                b.Property<Guid>("ObjectId")
+                    .HasColumnType("uniqueidentifier");
 
-                b.Property<string>("NormalizedName")
-                    .IsRequired()
-                    .HasMaxLength(100)
-                    .HasColumnType("nvarchar(100)");
-
-                b.Property<string>("PasswordHash")
-                    .IsRequired()
-                    .HasMaxLength(500)
-                    .HasColumnType("nvarchar(500)");
-
-                b.Property<string>("SecurityStamp")
-                    .IsRequired()
-                    .HasMaxLength(50)
-                    .HasColumnType("nvarchar(50)");
+                b.Property<Guid>("TenantId")
+                    .HasColumnType("uniqueidentifier");
 
                 b.HasKey("Id");
 
-                b.HasIndex("NormalizedName")
+                b.HasIndex("TenantId", "ObjectId")
                     .IsUnique();
 
-                b.ToTable("Admins");
+                b.ToTable("AdministratorGrants");
             });
 
         modelBuilder.Entity("AppDb.Models.LogEntry", b =>

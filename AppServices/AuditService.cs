@@ -5,7 +5,17 @@ namespace AppServices;
 
 public sealed class AuditService(AppDbContext db, TimeProvider time, IHttpContextAccessor http)
 {
-    public string Actor => http.HttpContext?.User.Identity?.Name ?? http.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "System";
+    public string Actor
+    {
+        get {
+            var user = http.HttpContext?.User;
+            var tenantClaim = user?.FindFirst("tid")?.Value ?? user?.FindFirst("http://schemas.microsoft.com/identity/claims/tenantid")?.Value;
+            var objectClaim = user?.FindFirst("oid")?.Value ?? user?.FindFirst("http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value;
+            return user?.Identity?.IsAuthenticated == true && Guid.TryParse(tenantClaim, out var tenantId) && Guid.TryParse(objectClaim, out var objectId)
+                ? $"{tenantId:D}/{objectId:D}"
+                : http.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "System";
+        }
+    }
     public void Add(string category, string message, int? scheduleId = null, string level = "Information", string? details = null)
         => db.Logs.Add(new LogEntry {
             Timestamp = time.GetUtcNow(),

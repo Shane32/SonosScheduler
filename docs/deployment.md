@@ -19,7 +19,7 @@ Publishing installs the client dependencies, runs GraphQL codegen and the produc
 1. Install IIS, its Application Initialization feature, and the .NET 11 Hosting Bundle matching this application. See Microsoft's [ASP.NET Core IIS guide](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/iis/?view=aspnetcore-11.0).
 2. Create a dedicated application pool with **No Managed Code**, x64 enabled, **Start Mode = AlwaysRunning**, **Idle Time-out = 0**, and **Maximum Worker Processes = 1**. Disable overlapping recycling; use planned maintenance for replacement. The background workers must stay running without browser traffic.
 3. Create a site or convert a virtual directory into an IIS **application**, using the dedicated pool. Set **Preload Enabled = True**, enable Anonymous Authentication, and configure a LAN hostname binding and HTTPS. Restrict inbound access to the intended LAN with server/network firewall rules. Configure [IIS Application Initialization](https://learn.microsoft.com/en-us/iis/get-started/whats-new-in-iis-8/iis-80-application-initialization) so the pool starts the app after reboot/recycle.
-4. Copy `artifacts/iis` to the site directory while the application is stopped or `app_offline.htm` is present. Keep environment-specific configuration outside the build artifact. The pool identity needs read/execute access to the published files and write access to its ASP.NET Core Data Protection key store. Enable **Load User Profile** or configure a persistent protected key store so cookie keys survive restarts.
+4. Copy `artifacts/iis` to the site directory while the application is stopped or `app_offline.htm` is present. Keep environment-specific configuration outside the build artifact. The pool identity needs read/execute access to the published files. Configure the private environment settings described below on the application pool before starting it.
 5. Ensure the server can reach every configured subnet on TCP 1400. The speakers need their own NAS access; the application browses the speakers' indexed libraries. No SSDP relay is required because discovery uses configured unicast subnets.
 
 For a child application, publish with its URL prefix, including the trailing slash. For example, an application named `music` uses:
@@ -34,9 +34,57 @@ The default prefix is `/`. IIS supplies the application's path base to ASP.NET C
 
 Publishing is local; no deployment workflow is required. Install the IIS **Management Service** role service before installing the current [Microsoft Web Deploy](https://www.iis.net/downloads/microsoft/web-deploy) package with its handler. Web Deploy 4 requires .NET Framework 4.7.2 or later; older Windows Server installations may need the supported 4.8 update and a planned restart first. This is separate from the application's .NET Hosting Bundle. Enable remote connections in IIS Management Service, select a certificate matching the server's publishing hostname, and start WMSVC automatically. Allow TCP 8172 only from authorized publishing workstations. Windows administrators can publish with their existing Windows credentials; delegate application access explicitly if using a non-administrator account.
 
-Keep the real server address, application name, credentials, and certificate in an ignored `AppServer/Properties/PublishProfiles/*.pubxml` or `.local-deploy/` file. Trust a private publishing certificate obtained through an authenticated administration channel before publishing; do not disable TLS validation. Preserve deployed `appsettings.Local.json` on subsequent publishes. Stop the application or use Web Deploy's AppOffline rule while replacing files.
+Keep the real server address, application name, credentials, and certificate in an ignored `AppServer/Properties/PublishProfiles/*.pubxml` or `.local-deploy/` file. Trust a private publishing certificate obtained through an authenticated administration channel before publishing; do not disable TLS validation. Application-pool environment settings stay on the server across publishes. Stop the application or use Web Deploy's AppOffline rule while replacing files.
 
 For publishing with the current Windows credentials, set the `WindowsAuthenticationEnabled` DWORD to `1` under `HKLM\SOFTWARE\Microsoft\WebManagement\Server`, restart WMSVC, and use `authType=NTLM` without a stored username or password. Confirm the publishing port's HTTP.sys certificate binding matches the selected certificate; changing the registry certificate hash alone may leave the original binding in place.
+
+## Entra registration and private configuration
+
+Use one Microsoft Entra app registration in the intended directory:
+
+1. Select **Accounts in this organizational directory only**.
+2. Add the **Single-page application** platform. Register the exact callback and sign-out return URLs: `https://<app-host>/<application-path>/oauth/callback` and `https://<app-host>/<application-path>/oauth/logout`. Add `http://localhost:5145/oauth/callback` and `http://localhost:5145/oauth/logout` for development.
+3. Under **Expose an API**, set the application ID URI to `api://<client-id>` and add the delegated `access_as_user` scope. Allow the SPA client to request that scope and grant consent as required by the directory's policy.
+4. Use authorization code flow with PKCE. Do not create a client secret or enable the legacy implicit grant for this SPA. The app does not need Microsoft Graph directory-read permissions to maintain administrator grants.
+
+See Microsoft's [SPA configuration](https://learn.microsoft.com/en-us/entra/identity-platform/scenario-spa-app-configuration) and [authorization code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow) documentation.
+
+Configure these server settings:
+
+| Key | Purpose |
+| --- | --- |
+| `Entra:TenantId` | Directory GUID accepted by the API and used for administrator grants. |
+| `Entra:ClientId` | Application/client GUID for the SPA and its exposed API. |
+| `Entra:BootstrapAdminObjectId` | First administrator's user object GUID in that directory; used only while no grants exist. |
+| `Entra:RequireSignIn` | `false` preserves public LAN controls and schedules; `true` requires Entra authentication for them. Administration always requires a grant. |
+
+Find a user's object ID in **Entra ID → Users → the user → Overview → Object ID**, inside the configured directory. Guest users also have an object ID in that directory. Use this value for bootstrap and for subsequent administrator grants.
+
+Authority, API scope, and redirect URLs are derived from these settings and the application's URL and path. There is no client secret. The browser must receive its client ID, authority, scope, and redirect URLs to sign in; these are public OAuth configuration, even when their deployment-specific values are kept outside Git.
+
+For development, keep the private values in [.NET User Secrets](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets), outside the repository:
+
+```powershell
+dotnet user-secrets set "Entra:TenantId" "<tenant-id>" --project AppServer
+dotnet user-secrets set "Entra:ClientId" "<client-id>" --project AppServer
+dotnet user-secrets set "Entra:BootstrapAdminObjectId" "<admin-object-id>" --project AppServer
+dotnet user-secrets set "Entra:RequireSignIn" "false" --project AppServer
+```
+
+The SDK project has a generic User Secrets identifier; the settings themselves are stored in the current developer's profile. User Secrets are a development configuration store, not an encrypted production vault. Do not copy their file into the published application.
+
+For IIS, use protected application-pool configuration/environment variables or another protected server configuration source. Set values on the dedicated pool, restrict access to the server configuration to administrators, and recycle the pool after changing them. Do not put private values into checked-in `appsettings.json`, `web.config`, frontend environment files, build artifacts, or a public publish profile. IIS environment-variable names use double underscores:
+
+```text
+Entra__TenantId=<tenant-id>
+Entra__ClientId=<client-id>
+Entra__BootstrapAdminObjectId=<admin-object-id>
+Entra__RequireSignIn=false
+ConnectionStrings__AppDbContext=<private-connection-string>
+ASPNETCORE_ENVIRONMENT=Production
+```
+
+HTTPS and the exact registered origin are required for a deployed sign-in flow. When changing a hostname or IIS application path, update the registered redirect URLs and rebuild with the matching `AppBasePath`.
 
 ## Database and first administrator
 
@@ -48,24 +96,19 @@ Server=.\SQLEXPRESS;Database=SonosScheduler;Integrated Security=true;Encrypt=tru
 
 Use a trusted SQL Server certificate and `TrustServerCertificate=false` when provisioned. The default checked-in connection string uses SQL LocalDB for development; LocalDB is not the IIS deployment database.
 
-Copy `AppServer/appsettings.Local.example.json` to `appsettings.Local.json` in the deployed directory, replace its bootstrap password with a unique 12–200 character password, and update the connection string. The local settings file is ignored by Git. Environment variables can instead set:
+Store the connection string in User Secrets for development or the protected IIS configuration described above. Use integrated Windows authentication to SQL Server where possible.
 
-```text
-ConnectionStrings__AppDbContext
-Admin__BootstrapName
-Admin__BootstrapPassword
-ASPNETCORE_ENVIRONMENT=Production
-```
+Startup applies generated EF migrations and creates the configured Entra administrator grant only if no grants exist. The runtime SQL identity therefore needs schema migration permissions; alternatively apply the migration with a deployment identity before startup. Sign in with that Entra account, add another administrator by their user object ID in the same directory, and remove `Entra:BootstrapAdminObjectId` from configuration. There is no local password login or public first-user registration endpoint.
 
-Startup applies generated EF migrations and creates the configured administrator only if there are no administrators. The runtime SQL identity therefore needs schema migration permissions; alternatively apply the migration with a deployment identity before startup. After first sign-in, add a second administrator and remove the bootstrap password from configuration. There is no public first-user registration endpoint.
+`AdministratorGrants` contains only its row ID, tenant ID, and user object ID. The Entra migration drops the previous local administrator table and its credentials. Back up the database before upgrading; old local accounts cannot be used after the upgrade. Any retained private configuration or credential files from an earlier deployment should be removed after moving to Entra.
 
 Migration startup retries transient SQL connection failures up to five times, including pre-login timeouts while SQL Express starts after a server reboot. IIS allows up to 300 seconds for application startup. Normal database operations keep their existing transaction behavior; startup retry does not replay speaker commands or schedule execution.
 
-Back up the SQL database regularly. The database contains subnet configuration, discovered rooms, schedules, credentials, and the last 30 days of activity. Logs are purged daily, so the retention boundary can lag by up to a day. A failed scheduled attempt is not retried automatically; check logs and run playback manually when needed.
+Back up the SQL database regularly. The database contains subnet configuration, discovered rooms, schedules, Entra administrator grants, and the last 30 days of activity. It contains no local usernames or passwords. Logs are purged daily, so the retention boundary can lag by up to a day. A failed scheduled attempt is not retried automatically; check logs and run playback manually when needed.
 
 ## Local development
 
-Set bootstrap credentials in an ignored `AppServer/appsettings.Local.json` or environment variables. In two terminals:
+Set the Entra settings with User Secrets as above. The default LocalDB connection string can be overridden there with `ConnectionStrings:AppDbContext`. In two terminals:
 
 ```powershell
 cd ReactApp
@@ -77,7 +120,7 @@ npm run dev
 dotnet run --project AppServer --launch-profile http
 ```
 
-Open `http://localhost:5145`. ASP.NET proxies the Vite server on port 5173, keeping API requests and admin cookies same-origin. Configure a network in Admin, then refresh speakers. The app initially contains no demonstration rooms or music.
+Open `http://localhost:5145`, which must be a registered SPA redirect URL. ASP.NET proxies the Vite server on port 5173, keeping client and API requests on the same origin. Sign in with Microsoft, configure a network in Admin, then refresh speakers. The app initially contains no demonstration rooms or music.
 
 ## Model/schema changes
 

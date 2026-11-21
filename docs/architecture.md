@@ -1,6 +1,6 @@
 # Design decisions
 
-The template's React / GraphQL.NET / EF Core structure is retained. `AppDb` contains the SQL Server model and generated migrations, `AppGraphQL` contains the schema and input mappings, and `AppServices` owns Sonos protocol operations, scheduling, administrator credentials, audit logging, and background workers. EF is used directly; there is no repository layer.
+The template's React / GraphQL.NET / EF Core structure is retained. `AppDb` contains the SQL Server model and generated migrations, `AppGraphQL` contains the schema and input mappings, and `AppServices` owns Sonos protocol operations, scheduling, administrator grants, audit logging, and background workers. EF is used directly; there is no repository layer.
 
 ## Networks and rooms
 
@@ -36,7 +36,7 @@ Schedules check live coordinator state, including `TRANSITIONING`, before decidi
 
 ## Scheduling
 
-Schedules store an explicit time zone, local `HH:mm`, a weekday mask (Sunday = 1), enabled state, optional UTC pause deadline, date exclusions, music selection, and room/volume settings. A null volume means keep the room's current value. All LAN visitors can edit schedules; the audit actor is the signed-in administrator name or request IP. This follows the requested LAN trust model rather than pretending anonymous visitors have verified identities.
+Schedules store an explicit time zone, local `HH:mm`, a weekday mask (Sunday = 1), enabled state, optional UTC pause deadline, date exclusions, music selection, and room/volume settings. A null volume means keep the room's current value. All LAN visitors can edit schedules by default; `Entra:RequireSignIn` can require authentication. The audit actor is the authenticated tenant/object ID pair or the anonymous request IP.
 
 The scheduler polls every 15 seconds. It considers occurrences in a five-minute grace window, including the previous local date around midnight. Edits take effect prospectively using `UpdatedAt`. Date exclusions use the schedule's local calendar. Spring-forward times that do not exist are skipped; a repeated fall-back time runs only at its earlier UTC occurrence.
 
@@ -44,9 +44,15 @@ Before device operations, a run row is committed with a unique `(ScheduleId, Sch
 
 ## Access, schema, and logs
 
-LAN use requires no account. Administrator sign-in uses locally stored PBKDF2 password hashes and an eight-hour, HttpOnly, SameSite Strict cookie. The first administrator comes from server configuration only when the administrator table is empty. Administrators add/remove other administrators, with a transaction protecting the last account. Cookie validation checks the database on every request, so removing an account revokes its sessions.
+The React client uses the template's `@shane32/msoauth` integration for Microsoft Entra authorization code flow with PKCE. The SPA requests an `access_as_user` token for this application's API. The server validates its issuer, audience, lifetime, and scope; the browser's display name is not an authorization identifier. A single-tenant registration is configured through `Entra:TenantId` and `Entra:ClientId`. Public SPA clients have no client secret.
 
-Administrative fields are protected in GraphQL, not just hidden by the UI. JSON POSTs require the `X-Sonos-Request: 1` header and a same-origin request. No cross-origin API access is enabled. Sign-in is rate-limited per remote IP. IIS supplies the network access boundary; this application intentionally trusts anyone who can reach the LAN site for room and schedule control.
+LAN controls and schedules remain anonymous by default. `Entra:RequireSignIn=true` requires an authenticated Entra user for these operations. Network configuration, administrator grants, and logs always require both Entra authentication and a matching database grant. `AdministratorGrants` stores only an integer ID and immutable tenant/object GUIDs, unique as a pair. There are no local user names, password hashes, or security stamps. Administrator checks read the grants for each request, so removing a grant removes administrative access without waiting for the access token to expire.
+
+`Entra:BootstrapAdminObjectId` creates the initial grant for the configured tenant only when the grant table is empty. Administrators add other users by their object ID in that tenant; the API does not request directory-wide Graph permissions or persist a directory profile. A serializable transaction prevents removing the last administrator. The generated migration drops the legacy administrator table, discarding its local credentials, and creates the grant table.
+
+Administrative fields are protected in GraphQL, not just hidden by the UI. JSON POSTs require the `X-Sonos-Request: 1` header and a same-origin request. No cross-origin API access is enabled. IIS supplies the network access boundary for anonymous LAN use; Entra supplies the identity boundary when sign-in is required. HTTPS is required for a deployed SPA sign-in origin.
+
+Deployment-specific configuration stays outside the public repository. Development uses .NET User Secrets; production uses protected IIS application-pool configuration or server environment variables. The server exposes the client ID, authority, scopes, and redirect URLs needed by the browser at runtime. These OAuth identifiers are public by design; credentials, database connection details, and private deployment settings must never be returned by that endpoint. See [configuration](deployment.md#entra-registration-and-private-configuration).
 
 Database entities use `EfObjectGraphType`, loader-backed navigation lists, root Relay connections, and grouped `DIObjectGraphBase` mutations. AutoMapper handles input properties; server-owned fields and relationship identity are handled explicitly. Client operations live only in `.queries.ts`; real codegen creates the bridge documents and production persisted documents from the approved server schema. The server accepts full documents as well as persisted IDs; authorization remains the access boundary.
 
