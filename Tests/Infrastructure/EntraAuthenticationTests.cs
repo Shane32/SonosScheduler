@@ -90,6 +90,32 @@ public sealed class EntraAuthenticationTests : EntraTestBase
         identity.GetProperty("isAdmin").GetBoolean().ShouldBeFalse();
         using var logs = await ReadGraphQLAsync("{ logs { totalCount } }", token);
         logs.RootElement.GetProperty("errors")[0].GetProperty("extensions").GetProperty("code").GetString().ShouldBe("ACCESS_DENIED");
+        (await Db.Administrators.AnyAsync()).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task AdministratorListUsesValidatedTokenNameAndTracksNameChanges()
+    {
+        var grant = new AdministratorGrant { TenantId = TenantId, ObjectId = ObjectId, DisplayName = "Previous display name" };
+        Db.Administrators.Add(grant);
+        await Db.SaveChangesAsync();
+        const string query = "{ admins { items { objectId displayName } } }";
+        using var initial = await ReadGraphQLAsync(query, CreateToken());
+        initial.RootElement.TryGetProperty("errors", out _).ShouldBeFalse();
+        var first = initial.RootElement.GetProperty("data").GetProperty("admins").GetProperty("items")[0];
+        first.GetProperty("objectId").GetString().ShouldBe(ObjectId.ToString("D"));
+        first.GetProperty("displayName").GetString().ShouldBe("Entra test user");
+        (await Db.Administrators.SingleAsync()).DisplayName.ShouldBe("Entra test user");
+
+        var renamedClaims = CreateClaims();
+        renamedClaims.RemoveAll(x => x.Type == "name");
+        renamedClaims.Add(new("name", "Updated display name"));
+        using var renamed = await ReadGraphQLAsync(query, CreateToken(renamedClaims));
+        renamed.RootElement.TryGetProperty("errors", out _).ShouldBeFalse();
+        renamed.RootElement.GetProperty("data").GetProperty("admins").GetProperty("items")[0]
+            .GetProperty("displayName").GetString().ShouldBe("Updated display name");
+        (await Db.Administrators.SingleAsync()).DisplayName.ShouldBe("Updated display name");
+        (await Db.Logs.AnyAsync()).ShouldBeFalse();
     }
 
     [Fact]
@@ -132,7 +158,7 @@ public sealed class EntraAuthenticationTests : EntraTestBase
         var addMutation = $$"""
             mutation {
               admins {
-                add(objectId: "{{targetObjectId:D}}") { id tenantId objectId }
+                add(objectId: "{{targetObjectId:D}}", displayName: "Other administrator") { id tenantId objectId displayName }
               }
             }
             """;
@@ -141,6 +167,7 @@ public sealed class EntraAuthenticationTests : EntraTestBase
         var returnedGrant = added.RootElement.GetProperty("data").GetProperty("admins").GetProperty("add");
         Guid.Parse(returnedGrant.GetProperty("tenantId").GetString()!).ShouldBe(TenantId);
         Guid.Parse(returnedGrant.GetProperty("objectId").GetString()!).ShouldBe(targetObjectId);
+        returnedGrant.GetProperty("displayName").GetString().ShouldBe("Other administrator");
         var addedId = returnedGrant.GetProperty("id").GetString();
         addedId.ShouldNotBeNullOrEmpty();
         (await Db.Administrators.SingleAsync(x => x.ObjectId == targetObjectId)).Id.ToString(CultureInfo.InvariantCulture).ShouldBe(addedId);

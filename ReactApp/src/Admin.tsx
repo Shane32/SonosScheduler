@@ -26,6 +26,7 @@ export function Admin({
   const { config, authenticated } = useSonosAuth();
   const [editing, setEditing] = useState<NetworkGroup | "new">();
   const [objectId, setObjectId] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [after, setAfter] = useState<string>();
   const admins = useQuery(Q.SonosAdminsDocument, { skip: !isAdmin || section !== "admins" });
   const logs = useQuery(Q.SonosLogsDocument, { variables: { after }, skip: !isAdmin || section !== "logs" });
@@ -48,8 +49,7 @@ export function Admin({
           </p>
           {authenticated ? <SignOutButton /> : <SignInButton admin />}
           <p className="small text-body-secondary mt-4 mb-0">
-            The first administrator is configured on the server using an Entra object ID. The application stores administrator permissions
-            only.
+            The first administrator is configured on the server using an Entra object ID. Microsoft handles sign-in.
           </p>
         </div>
       </section>
@@ -154,15 +154,19 @@ export function Admin({
                 {admins.loading && <p role="status">Loading administrators…</p>}
                 {admins.data?.admins.items.map((a) => (
                   <div className="admin-row" key={a.id}>
-                    <span className="text-break">
-                      <code>{a.objectId}</code>
-                      <small className="d-block text-body-secondary">Tenant: {a.tenantId}</small>
-                    </span>
+                    <div className="text-break">
+                      <strong>{a.displayName || "Name available after sign-in"}</strong>
+                      <details className="small text-body-secondary mt-1">
+                        <summary>Account details</summary>
+                        <div>Object ID: {a.objectId}</div>
+                        <div>Tenant ID: {a.tenantId}</div>
+                      </details>
+                    </div>
                     <button
                       className="btn btn-sm btn-outline-danger"
                       disabled={busy || admins.data!.admins.items.length < 2}
                       onClick={() => {
-                        if (confirm(`Remove administrator ${a.objectId}?`))
+                        if (confirm(`Remove administrator ${a.displayName || "with this account"}?`))
                           void run(() => deleteAdmin({ variables: { id: a.id } }), "Administrator removed.").then((ok) => {
                             if (ok) {
                               admins.refetch();
@@ -184,15 +188,36 @@ export function Admin({
               className="card card-body"
               onSubmit={(e) => {
                 e.preventDefault();
-                void run(() => addAdmin({ variables: { objectId: objectId.trim() } }), "Administrator added.").then((ok) => {
+                void run(
+                  () => addAdmin({ variables: { objectId: objectId.trim(), displayName: displayName.trim() } }),
+                  "Administrator added.",
+                ).then((ok) => {
                   if (ok) {
                     setObjectId("");
+                    setDisplayName("");
                     admins.refetch();
                   }
                 });
               }}
             >
               <h2 className="h5 mb-4">Add administrator</h2>
+              <label className="form-label" htmlFor="new-admin-name">
+                Display name
+              </label>
+              <input
+                id="new-admin-name"
+                className="form-control"
+                required
+                maxLength={200}
+                pattern=".*\S.*"
+                autoComplete="name"
+                aria-describedby="admin-name-help"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+              <p id="admin-name-help" className="form-text mb-3">
+                Updated from their Microsoft account when they sign in.
+              </p>
               <label className="form-label" htmlFor="new-admin">
                 Entra user object ID
               </label>

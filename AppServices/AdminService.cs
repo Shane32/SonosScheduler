@@ -17,15 +17,18 @@ public sealed class AdminService(AppDbContext db, AuditService audit, IConfigura
         await AddAsync(objectId, ct);
     }
 
-    public async Task<AdministratorGrant> AddAsync(Guid objectId, CancellationToken ct)
+    public async Task<AdministratorGrant> AddAsync(Guid objectId, CancellationToken ct, string? displayName = null)
     {
         if (objectId == Guid.Empty)
             throw new ClientError("An administrator object ID is required.");
+        displayName = displayName?.Trim() ?? "";
+        if (displayName.Length > 200)
+            throw new ClientError("An administrator display name cannot exceed 200 characters.");
         if (!Guid.TryParse(configuration["Entra:TenantId"], out var tenantId) || tenantId == Guid.Empty)
             throw new InvalidOperationException("An Entra tenant ID must be configured before granting administrator access.");
         if (await db.Administrators.AnyAsync(x => x.TenantId == tenantId && x.ObjectId == objectId, ct))
             throw new ClientError("This Entra account is already an administrator.");
-        var admin = new AdministratorGrant { TenantId = tenantId, ObjectId = objectId };
+        var admin = new AdministratorGrant { TenantId = tenantId, ObjectId = objectId, DisplayName = displayName };
         db.Administrators.Add(admin);
         audit.Add("Admin", $"Granted administrator access to Entra object '{objectId:D}' in tenant '{tenantId:D}'.");
         await db.SaveChangesAsync(ct);

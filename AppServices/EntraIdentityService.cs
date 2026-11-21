@@ -15,8 +15,20 @@ public sealed class EntraIdentityService(AppDbContext db, IConfiguration configu
             !Guid.TryParse(identity.FindFirst("oid")?.Value, out var objectId) || objectId == Guid.Empty ||
             !(identity.FindFirst("scp")?.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("access_as_user", StringComparer.Ordinal) ?? false))
             return false;
-        if (await db.Administrators.AnyAsync(x => x.TenantId == tenantId && x.ObjectId == objectId, ct))
+        var administrator = await db.Administrators.AsTracking().SingleOrDefaultAsync(x => x.TenantId == tenantId && x.ObjectId == objectId, ct);
+        if (administrator != null) {
             identity.AddClaim(new Claim(ClaimTypes.Role, "Admin"));
+            // Display names are presentation metadata from this validated token, never permission keys.
+            var displayName = identity.FindFirst("name")?.Value.Trim();
+            if (!string.IsNullOrEmpty(displayName)) {
+                if (displayName.Length > 200)
+                    displayName = displayName[..(char.IsHighSurrogate(displayName[199]) ? 199 : 200)];
+                if (!string.Equals(administrator.DisplayName, displayName, StringComparison.Ordinal)) {
+                    administrator.DisplayName = displayName;
+                    await db.SaveChangesAsync(ct);
+                }
+            }
+        }
         return true;
     }
 }

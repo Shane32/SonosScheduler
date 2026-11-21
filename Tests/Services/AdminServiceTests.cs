@@ -20,6 +20,7 @@ public sealed class AdminServiceTests
         var grant = await fixture.Service.AddAsync(_firstObjectId, CancellationToken.None);
         grant.TenantId.ShouldBe(_tenantId);
         grant.ObjectId.ShouldBe(_firstObjectId);
+        grant.DisplayName.ShouldBe("");
         var log = await fixture.Db.Logs.SingleAsync();
         log.Message.ShouldContain(_firstObjectId.ToString("D"));
         log.Message.ShouldContain(_tenantId.ToString("D"));
@@ -27,6 +28,79 @@ public sealed class AdminServiceTests
         log.Actor.ShouldNotContain("Display name");
         await Should.ThrowAsync<ClientError>(() => fixture.Service.AddAsync(_firstObjectId, CancellationToken.None));
         (await fixture.Db.Administrators.CountAsync()).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task StoresTrimmedAdministratorDisplayName()
+    {
+        using var fixture = new Fixture();
+        var grant = await fixture.Service.AddAsync(_firstObjectId, CancellationToken.None, "  Ada Lovelace  ");
+        grant.DisplayName.ShouldBe("Ada Lovelace");
+        (await fixture.Db.Administrators.SingleAsync()).DisplayName.ShouldBe("Ada Lovelace");
+        (await fixture.Db.Logs.SingleAsync()).Message.ShouldNotContain("Ada Lovelace");
+    }
+
+    [Fact]
+    public async Task OversizedDisplayNameCannotCreateGrant()
+    {
+        using var fixture = new Fixture();
+        var error = await Should.ThrowAsync<ClientError>(() => fixture.Service.AddAsync(_firstObjectId, CancellationToken.None, new string('a', 201)));
+        error.Message.ShouldBe("An administrator display name cannot exceed 200 characters.");
+        (await fixture.Db.Administrators.CountAsync()).ShouldBe(0);
+        (await fixture.Db.Logs.CountAsync()).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ValidatedTokenNameRefreshesExistingGrantWithoutChangingPermissionIdentifiers()
+    {
+        using var fixture = new Fixture();
+        var grant = await fixture.Service.AddAsync(_firstObjectId, CancellationToken.None, "Previous display name");
+        fixture.Db.ResetDbTrace();
+        var identity = CreateIdentity(_firstObjectId, "  Ada Lovelace  ");
+        var identities = new EntraIdentityService(fixture.Db, fixture.Configuration);
+
+        (await identities.ApplyAsync(identity, CancellationToken.None)).ShouldBeTrue();
+
+        identity.HasClaim(ClaimTypes.Role, "Admin").ShouldBeTrue();
+        var updated = await fixture.Db.Administrators.AsNoTracking().SingleAsync();
+        updated.Id.ShouldBe(grant.Id);
+        updated.TenantId.ShouldBe(_tenantId);
+        updated.ObjectId.ShouldBe(_firstObjectId);
+        updated.DisplayName.ShouldBe("Ada Lovelace");
+        fixture.Db.DbTrace.ShouldContain("UPDATE \"AdministratorGrants\"");
+
+        fixture.Db.ResetDbTrace();
+        (await identities.ApplyAsync(CreateIdentity(_firstObjectId, "Ada Lovelace"), CancellationToken.None)).ShouldBeTrue();
+        fixture.Db.DbTrace.ShouldNotContain("UPDATE \"AdministratorGrants\"");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task MissingTokenNamePreservesExistingDisplayName(string? displayName)
+    {
+        using var fixture = new Fixture();
+        await fixture.Service.AddAsync(_firstObjectId, CancellationToken.None, "Ada Lovelace");
+        fixture.Db.ResetDbTrace();
+        var identities = new EntraIdentityService(fixture.Db, fixture.Configuration);
+        (await identities.ApplyAsync(CreateIdentity(_firstObjectId, displayName), CancellationToken.None)).ShouldBeTrue();
+        (await fixture.Db.Administrators.SingleAsync()).DisplayName.ShouldBe("Ada Lovelace");
+        fixture.Db.DbTrace.ShouldNotContain("UPDATE \"AdministratorGrants\"");
+    }
+
+    [Fact]
+    public async Task MatchingDisplayNameCannotCreateOrInheritAdministratorGrant()
+    {
+        using var fixture = new Fixture();
+        await fixture.Service.AddAsync(_firstObjectId, CancellationToken.None, "Ada Lovelace");
+        var identities = new EntraIdentityService(fixture.Db, fixture.Configuration);
+        var identity = CreateIdentity(_secondObjectId, "Ada Lovelace");
+        identity.AddClaim(new Claim(ClaimTypes.Role, "Admin"));
+        (await identities.ApplyAsync(identity, CancellationToken.None)).ShouldBeTrue();
+        identity.HasClaim(ClaimTypes.Role, "Admin").ShouldBeFalse();
+        (await fixture.Db.Administrators.CountAsync()).ShouldBe(1);
+        (await fixture.Db.Administrators.SingleAsync()).ObjectId.ShouldBe(_firstObjectId);
     }
 
     [Fact]
@@ -64,6 +138,18 @@ public sealed class AdminServiceTests
         var log = await fixture.Db.Logs.OrderByDescending(x => x.Id).FirstAsync();
         log.Message.ShouldStartWith("Revoked administrator access");
         log.Message.ShouldContain(_firstObjectId.ToString("D"));
+    }
+
+    private static ClaimsIdentity CreateIdentity(Guid objectId, string? displayName)
+    {
+        var identity = new ClaimsIdentity([
+            new Claim("tid", _tenantId.ToString("D")),
+            new Claim("oid", objectId.ToString("D")),
+            new Claim("scp", "access_as_user")
+        ], "ValidatedEntraToken");
+        if (displayName != null)
+            identity.AddClaim(new Claim("name", displayName));
+        return identity;
     }
 
     private sealed class Fixture : IDisposable
