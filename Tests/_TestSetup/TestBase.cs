@@ -56,7 +56,8 @@ public class TestBase : GraphQLTestBase<Startup>
     }
 
     /// <inheritdoc/>
-    public override Task<ExecutionResponse> RunQueryAsync(string query, object? variables = null) => RunQueryAsync(query, variables, true);
+    public override Task<ExecutionResponse> RunQueryAsync(string query, object? variables = null) =>
+        RunQueryAsync(query, variables, true);
 
     /// <inheritdoc cref="RunQueryAsync(string, object?)"/>
     /// <param name="noTracking">Whether to clear the change tracker before and after running the query.</param>

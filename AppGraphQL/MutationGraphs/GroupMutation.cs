@@ -44,7 +44,11 @@ public sealed class GroupMutation(AppDbContext db, IMapper mapper, SonosService 
         return true;
     }
 
-    public async Task<bool> RefreshAsync([Id] int id, CancellationToken ct) { await sonos.RefreshAsync(id, ct); return true; }
+    public async Task<bool> RefreshAsync([Id] int id, CancellationToken ct)
+    {
+        await sonos.RefreshAsync(id, ct);
+        return true;
+    }
 
     private static void Validate(GroupInput input)
     {

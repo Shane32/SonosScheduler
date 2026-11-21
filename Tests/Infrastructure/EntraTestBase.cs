@@ -69,12 +69,13 @@ public abstract class EntraTestBase : TestBase
         return new RsaSecurityKey(rsa.ExportParameters(true)) { KeyId = Guid.NewGuid().ToString("N") };
     }
 
-    protected static List<Claim> CreateClaims() => [
-        new("tid", TenantId.ToString("D")),
-        new("oid", ObjectId.ToString("D")),
-        new("name", "Entra test user"),
-        new("scp", "access_as_user")
-    ];
+    protected static List<Claim> CreateClaims() =>
+        [
+            new("tid", TenantId.ToString("D")),
+            new("oid", ObjectId.ToString("D")),
+            new("name", "Entra test user"),
+            new("scp", "access_as_user")
+        ];
 
     protected string CreateToken(IEnumerable<Claim>? claims = null, string? issuer = null, string? audience = null, SecurityKey? signingKey = null, bool expired = false, bool omitSignature = false)
     {

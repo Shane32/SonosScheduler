@@ -328,10 +328,17 @@ public sealed class SonosService(AppDbContext db, SonosClient client, TimeProvid
 
     public static readonly IReadOnlySet<string> SelectionModes = new HashSet<string>(["PlayAll", "RandomTrack", "DayOfYearTrack", "RandomFolder", "DayOfYearFolder"], StringComparer.Ordinal);
     private sealed class LibraryBudget { public int Entries { get; set; } }
-    private static bool IsNasTrack(LibraryItem item) => !item.IsContainer && item.ResourceUri.StartsWith("x-file-cifs:", StringComparison.OrdinalIgnoreCase);
-    private static void ValidateObjectId(string id) { if (id.Length > 2000 || !(id.StartsWith("A:", StringComparison.Ordinal) || id.StartsWith("S:", StringComparison.Ordinal))) throw new ClientError("Select an item from My Music Library or shared folders."); }
-    private static Uri DescriptionUri(string address) => new($"http://{address}:1400/xml/device_description.xml");
-    private static bool ValidLocation(Uri uri, IPv4Subnet subnet) => uri.Scheme == "http" && uri.Port == 1400 && string.IsNullOrEmpty(uri.UserInfo) && IPAddress.TryParse(uri.Host, out var ip) && subnet.Contains(ip);
+    private static bool IsNasTrack(LibraryItem item) =>
+        !item.IsContainer && item.ResourceUri.StartsWith("x-file-cifs:", StringComparison.OrdinalIgnoreCase);
+    private static void ValidateObjectId(string id)
+    {
+        if (id.Length > 2000 || !(id.StartsWith("A:", StringComparison.Ordinal) || id.StartsWith("S:", StringComparison.Ordinal)))
+            throw new ClientError("Select an item from My Music Library or shared folders.");
+    }
+    private static Uri DescriptionUri(string address) =>
+        new($"http://{address}:1400/xml/device_description.xml");
+    private static bool ValidLocation(Uri uri, IPv4Subnet subnet) =>
+        uri.Scheme == "http" && uri.Port == 1400 && string.IsNullOrEmpty(uri.UserInfo) && IPAddress.TryParse(uri.Host, out var ip) && subnet.Contains(ip);
     private async Task<Speaker> LoadAsync(Uri uri, IPv4Subnet subnet, CancellationToken ct)
     {
         if (!ValidLocation(uri, subnet))
@@ -352,5 +359,6 @@ public sealed class SonosService(AppDbContext db, SonosClient client, TimeProvid
         row.IsOnline = true;
         row.LastSeenAt = row.StatusUpdatedAt = time.GetUtcNow();
     }
-    private static bool ConnectionError(Exception ex, CancellationToken ct) => ex is HttpRequestException or SonosException or XmlException or UriFormatException || ex is OperationCanceledException && !ct.IsCancellationRequested;
+    private static bool ConnectionError(Exception ex, CancellationToken ct) =>
+        ex is HttpRequestException or SonosException or XmlException or UriFormatException || ex is OperationCanceledException && !ct.IsCancellationRequested;
 }

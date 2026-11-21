@@ -145,6 +145,11 @@ public sealed class SonosServiceTests
             var time = new FakeTimeProvider();
             Service = new(Db, Client, time, new AuditService(Db, time, new HttpContextAccessor()));
         }
-        public void Dispose() { Db.Dispose(); _httpClient.Dispose(); _connection.Dispose(); }
+        public void Dispose()
+        {
+            Db.Dispose();
+            _httpClient.Dispose();
+            _connection.Dispose();
+        }
     }
 }

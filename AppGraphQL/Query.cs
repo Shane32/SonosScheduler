@@ -7,7 +7,8 @@ namespace AppGraphQL;
 
 public sealed class Query(AppDbContext db, SonosService sonos) : DIObjectGraphBase
 {
-    public SessionInfo Session() => new(User?.IsInRole("Admin") == true, User?.Identity?.Name);
+    public SessionInfo Session() =>
+        new(User?.IsInRole("Admin") == true, User?.Identity?.Name);
     public Task<Connection<EfSource<NetworkGroup>>> GroupsAsync(int? first, int? last, [Id] string? before, [Id] string? after, CancellationToken ct)
         => db.Groups.OrderBy(x => x.Name).ThenBy(x => x.Id).ToGraphConnectionAsync(first, last, after, before, 100);
     public Task<Connection<EfSource<Schedule>>> SchedulesAsync([Id] int? groupId, int? first, int? last, [Id] string? before, [Id] string? after, CancellationToken ct)

@@ -71,7 +71,8 @@ public sealed class ScheduleMutation(AppDbContext db, IMapper mapper, AuditServi
         return true;
     }
 
-    private async Task<Schedule> FindAsync(int id, CancellationToken ct) => await db.Schedules.SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new ClientError("Schedule not found.");
+    private async Task<Schedule> FindAsync(int id, CancellationToken ct) =>
+        await db.Schedules.SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new ClientError("Schedule not found.");
     private void MapChildren(ScheduleInput input, Schedule schedule)
     {
         schedule.Speakers = input.Speakers.Select(mapper.Map<ScheduleSpeaker>).ToList();

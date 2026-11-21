@@ -6,8 +6,10 @@ namespace Services;
 
 public sealed class ScheduleClockTests
 {
-    private static Schedule Example() => new() { Id = 1, Name = "Morning", GroupId = 1, DaysOfWeek = 127, LocalTime = "08:00", TimeZoneId = "America/New_York", LibraryObjectId = "S:folder", Speakers = [new() { SpeakerId = 1 }], UpdatedAt = DateTimeOffset.MinValue };
-    private static DateTimeOffset Utc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
+    private static Schedule Example() =>
+        new() { Id = 1, Name = "Morning", GroupId = 1, DaysOfWeek = 127, LocalTime = "08:00", TimeZoneId = "America/New_York", LibraryObjectId = "S:folder", Speakers = [new() { SpeakerId = 1 }], UpdatedAt = DateTimeOffset.MinValue };
+    private static DateTimeOffset Utc(string value) =>
+        DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 
     [Theory]
     [InlineData("America/New_York")]

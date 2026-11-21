@@ -300,8 +300,16 @@ static async Task<string> RunMenuAsync(Fixture fixture, string input)
     } finally { Console.SetIn(previousIn); Console.SetOut(previousOut); }
 }
 
-static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
-static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new InvalidOperationException($"Expected '{expected}', got '{actual}'."); }
+static void Check(bool value, string message)
+{
+    if (!value)
+        throw new InvalidOperationException(message);
+}
+static void Equal<T>(T expected, T actual)
+{
+    if (!EqualityComparer<T>.Default.Equals(expected, actual))
+        throw new InvalidOperationException($"Expected '{expected}', got '{actual}'.");
+}
 static void Throws<T>(Action action) where T : Exception
 {
     try { action(); } catch (T) { return; }

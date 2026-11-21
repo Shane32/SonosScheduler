@@ -16,7 +16,8 @@ public sealed class SubApplicationTests : EntraTestBase
         webHostBuilder.ConfigureTestServices(services => services.AddSingleton<IStartupFilter, SubApplicationStartupFilter>());
     }
 
-    protected override string GetGraphQLPath() => "/music/api/graphql";
+    protected override string GetGraphQLPath() =>
+        "/music/api/graphql";
 
     [Fact]
     public async Task PublicAuthenticationConfigurationUsesApplicationPath()

@@ -28,11 +28,13 @@ internal sealed class FakeSonosMessageHandler : HttpMessageHandler
         var action = request.Headers.GetValues("SOAPACTION").Single().Trim('"').Split('#')[1];
         Calls.Add(address.Host + ":" + action);
         var body = XDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
-        string Arg(string name) => body.Descendants().First(x => x.Name.LocalName == name).Value;
+        string Arg(string name) =>
+            body.Descendants().First(x => x.Name.LocalName == name).Value;
         var values = new List<XElement>();
         switch (action) {
             case "GetZoneGroupState":
-                XElement Member(string name, string ip) => new("ZoneGroupMember", new XAttribute("UUID", "RINCON_" + name.ToUpperInvariant()), new XAttribute("ZoneName", name), new XAttribute("Location", $"http://{ip}:1400/xml/device_description.xml"));
+                XElement Member(string name, string ip) =>
+                    new("ZoneGroupMember", new XAttribute("UUID", "RINCON_" + name.ToUpperInvariant()), new XAttribute("ZoneName", name), new XAttribute("Location", $"http://{ip}:1400/xml/device_description.xml"));
                 var kitchen = Member("Kitchen", "192.168.1.20");
                 var office = Member("Office", "192.168.1.21");
                 var groups = CombinedPlayingGroup ? new XElement("ZoneGroups", new XElement("ZoneGroup", new XAttribute("Coordinator", "RINCON_KITCHEN"), kitchen, office)) : new XElement("ZoneGroups", new XElement("ZoneGroup", new XAttribute("Coordinator", "RINCON_KITCHEN"), kitchen), new XElement("ZoneGroup", new XAttribute("Coordinator", "RINCON_OFFICE"), office));
@@ -74,5 +76,6 @@ internal sealed class FakeSonosMessageHandler : HttpMessageHandler
         XNamespace dc = "http://purl.org/dc/elements/1.1/";
         return new XElement(didl + (folder ? "container" : "item"), new XAttribute("id", id), new XElement(dc + "title", title), folder ? null : new XElement(didl + "res", $"x-file-cifs://nas/{title.ToLowerInvariant()}.mp3"));
     }
-    private static HttpResponseMessage Response(string text) => new(HttpStatusCode.OK) { Content = new StringContent(text, Encoding.UTF8, "text/xml") };
+    private static HttpResponseMessage Response(string text) =>
+        new(HttpStatusCode.OK) { Content = new StringContent(text, Encoding.UTF8, "text/xml") };
 }

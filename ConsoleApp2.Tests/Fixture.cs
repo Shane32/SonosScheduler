@@ -10,7 +10,11 @@ internal sealed class Fixture : HttpMessageHandler
     public Func<RecordedRequest, CancellationToken, Task<HttpResponseMessage?>>? OverrideAsync { get; set; }
     private readonly HttpClient _http;
     public SonosClient Client { get; }
-    public Fixture() { _http = new HttpClient(this); Client = new SonosClient(_http); }
+    public Fixture()
+    {
+        _http = new HttpClient(this);
+        Client = new SonosClient(_http);
+    }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -53,7 +57,8 @@ internal sealed class Fixture : HttpMessageHandler
         return Xml(Envelope(new XElement(action.Name.Namespace + (recorded.Action + "Response"), fields)));
     }
 
-    private static XElement Field(string name, string value) => new(name, value);
+    private static XElement Field(string name, string value) =>
+        new(name, value);
     private static HttpResponseMessage Xml(string content, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status) { Content = new StringContent(content, Encoding.UTF8, "text/xml") };
     private static string Envelope(XElement body)
@@ -67,15 +72,17 @@ internal sealed class Fixture : HttpMessageHandler
         return Xml(Envelope(new XElement(soap + "Fault", Field("faultstring", "UPnPError"),
             new XElement("detail", new XElement("UPnPError", Field("errorCode", code), Field("errorDescription", description))))), HttpStatusCode.InternalServerError);
     }
-    public static HttpResponseMessage LibraryResponse(string didl, int returned, int total) => Xml(Envelope(
-        new XElement(XName.Get("BrowseResponse", "urn:schemas-upnp-org:service:ContentDirectory:1"),
-            Field("Result", didl), Field("NumberReturned", returned.ToString(CultureInfo.InvariantCulture)), Field("TotalMatches", total.ToString(CultureInfo.InvariantCulture)))));
-    public static HttpResponseMessage StandaloneTopologyResponse(string host) => Xml(Envelope(
-        new XElement(XName.Get("GetZoneGroupStateResponse", "urn:schemas-upnp-org:service:ZoneGroupTopology:1"),
-            Field("ZoneGroupState", new XElement("ZoneGroupState", new XElement("ZoneGroups", new XElement("ZoneGroup",
-                new XAttribute("Coordinator", $"RINCON_{host.ToUpperInvariant()}"), new XElement("ZoneGroupMember",
-                    new XAttribute("UUID", $"RINCON_{host.ToUpperInvariant()}"), new XAttribute("ZoneName", "Remote speaker"),
-                    new XAttribute("Location", $"http://{host}:1400/xml/device_description.xml"))))).ToString()))));
+    public static HttpResponseMessage LibraryResponse(string didl, int returned, int total) =>
+        Xml(Envelope(
+            new XElement(XName.Get("BrowseResponse", "urn:schemas-upnp-org:service:ContentDirectory:1"),
+                Field("Result", didl), Field("NumberReturned", returned.ToString(CultureInfo.InvariantCulture)), Field("TotalMatches", total.ToString(CultureInfo.InvariantCulture)))));
+    public static HttpResponseMessage StandaloneTopologyResponse(string host) =>
+        Xml(Envelope(
+            new XElement(XName.Get("GetZoneGroupStateResponse", "urn:schemas-upnp-org:service:ZoneGroupTopology:1"),
+                Field("ZoneGroupState", new XElement("ZoneGroupState", new XElement("ZoneGroups", new XElement("ZoneGroup",
+                    new XAttribute("Coordinator", $"RINCON_{host.ToUpperInvariant()}"), new XElement("ZoneGroupMember",
+                        new XAttribute("UUID", $"RINCON_{host.ToUpperInvariant()}"), new XAttribute("ZoneName", "Remote speaker"),
+                        new XAttribute("Location", $"http://{host}:1400/xml/device_description.xml"))))).ToString()))));
     private static string Description(string host)
     {
         XNamespace ns = "urn:schemas-upnp-org:device-1-0";

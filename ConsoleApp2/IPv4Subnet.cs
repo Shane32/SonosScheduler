@@ -39,11 +39,13 @@ public sealed class IPv4Subnet
             yield return Address(first + (uint)i);
     }
 
-    public override string ToString() => $"{Address(_network)}/{_prefixLength}";
+    public override string ToString() =>
+        $"{Address(_network)}/{_prefixLength}";
 
     private static IPAddress Address(uint value) =>
         new(new byte[] { (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value });
 
-    private static InvalidDataException InvalidSubnet() => new(
-        "DiscoverySubnet must be IPv4 CIDR with a prefix from /16 through /32, for example 192.168.50.0/24. Use null for default discovery.");
+    private static InvalidDataException InvalidSubnet() =>
+        new(
+            "DiscoverySubnet must be IPv4 CIDR with a prefix from /16 through /32, for example 192.168.50.0/24. Use null for default discovery.");
 }

@@ -10,5 +10,9 @@ public sealed class AdminMutation(AdminService admins, AppDbContext db) : DIObje
         var admin = await admins.AddAsync(objectId, ct, displayName);
         return await db.Administrators.ToGraphSingleAsync(x => x.Id == admin.Id);
     }
-    public async Task<bool> DeleteAsync([Id] int id, CancellationToken ct) { await admins.DeleteAsync(id, ct); return true; }
+    public async Task<bool> DeleteAsync([Id] int id, CancellationToken ct)
+    {
+        await admins.DeleteAsync(id, ct);
+        return true;
+    }
 }
