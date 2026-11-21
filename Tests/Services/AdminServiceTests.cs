@@ -1,8 +1,12 @@
 using System.Security.Claims;
+using AppServer;
 using AppServices;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using TestDb;
 
 namespace Services;
@@ -57,9 +61,7 @@ public sealed class AdminServiceTests
         var grant = await fixture.Service.AddAsync(_firstObjectId, CancellationToken.None, "Previous display name");
         fixture.Db.ResetDbTrace();
         var identity = CreateIdentity(_firstObjectId, "  Ada Lovelace  ");
-        var identities = new EntraIdentityService(fixture.Db, fixture.Configuration);
-
-        (await identities.ApplyAsync(identity, CancellationToken.None)).ShouldBeTrue();
+        (await fixture.ApplyIdentityAsync(identity)).ShouldBeTrue();
 
         identity.HasClaim(ClaimTypes.Role, "Admin").ShouldBeTrue();
         var updated = await fixture.Db.Administrators.AsNoTracking().SingleAsync();
@@ -70,7 +72,7 @@ public sealed class AdminServiceTests
         fixture.Db.DbTrace.ShouldContain("UPDATE \"AdministratorGrants\"");
 
         fixture.Db.ResetDbTrace();
-        (await identities.ApplyAsync(CreateIdentity(_firstObjectId, "Ada Lovelace"), CancellationToken.None)).ShouldBeTrue();
+        (await fixture.ApplyIdentityAsync(CreateIdentity(_firstObjectId, "Ada Lovelace"))).ShouldBeTrue();
         fixture.Db.DbTrace.ShouldNotContain("UPDATE \"AdministratorGrants\"");
     }
 
@@ -83,8 +85,7 @@ public sealed class AdminServiceTests
         using var fixture = new Fixture();
         await fixture.Service.AddAsync(_firstObjectId, CancellationToken.None, "Ada Lovelace");
         fixture.Db.ResetDbTrace();
-        var identities = new EntraIdentityService(fixture.Db, fixture.Configuration);
-        (await identities.ApplyAsync(CreateIdentity(_firstObjectId, displayName), CancellationToken.None)).ShouldBeTrue();
+        (await fixture.ApplyIdentityAsync(CreateIdentity(_firstObjectId, displayName))).ShouldBeTrue();
         (await fixture.Db.Administrators.SingleAsync()).DisplayName.ShouldBe("Ada Lovelace");
         fixture.Db.DbTrace.ShouldNotContain("UPDATE \"AdministratorGrants\"");
     }
@@ -94,10 +95,9 @@ public sealed class AdminServiceTests
     {
         using var fixture = new Fixture();
         await fixture.Service.AddAsync(_firstObjectId, CancellationToken.None, "Ada Lovelace");
-        var identities = new EntraIdentityService(fixture.Db, fixture.Configuration);
         var identity = CreateIdentity(_secondObjectId, "Ada Lovelace");
         identity.AddClaim(new Claim(ClaimTypes.Role, "Admin"));
-        (await identities.ApplyAsync(identity, CancellationToken.None)).ShouldBeTrue();
+        (await fixture.ApplyIdentityAsync(identity)).ShouldBeTrue();
         identity.HasClaim(ClaimTypes.Role, "Admin").ShouldBeFalse();
         (await fixture.Db.Administrators.CountAsync()).ShouldBe(1);
         (await fixture.Db.Administrators.SingleAsync()).ObjectId.ShouldBe(_firstObjectId);
@@ -108,7 +108,7 @@ public sealed class AdminServiceTests
     {
         using var fixture = new Fixture();
         await Should.ThrowAsync<ClientError>(() => fixture.Service.AddAsync(Guid.Empty, CancellationToken.None));
-        fixture.Configuration["Entra:TenantId"] = "invalid";
+        fixture.Configuration["Authentication:Schemes:Bearer:Authority"] = "https://login.microsoftonline.com/invalid/v2.0";
         await Should.ThrowAsync<InvalidOperationException>(() => fixture.Service.AddAsync(_firstObjectId, CancellationToken.None));
         (await fixture.Db.Administrators.CountAsync()).ShouldBe(0);
     }
@@ -117,9 +117,9 @@ public sealed class AdminServiceTests
     public async Task BootstrapCreatesOneGrantAndDoesNotRegrantAfterAdministratorsChange()
     {
         using var fixture = new Fixture();
-        fixture.Configuration["Entra:BootstrapAdminObjectId"] = _firstObjectId.ToString("D");
+        fixture.Configuration["Administrators:BootstrapObjectId"] = _firstObjectId.ToString("D");
         await fixture.Service.BootstrapAsync(CancellationToken.None);
-        fixture.Configuration["Entra:BootstrapAdminObjectId"] = _secondObjectId.ToString("D");
+        fixture.Configuration["Administrators:BootstrapObjectId"] = _secondObjectId.ToString("D");
         await fixture.Service.BootstrapAsync(CancellationToken.None);
         var grants = await fixture.Db.Administrators.ToListAsync();
         grants.ShouldHaveSingleItem();
@@ -144,8 +144,7 @@ public sealed class AdminServiceTests
     {
         var identity = new ClaimsIdentity([
             new Claim("tid", _tenantId.ToString("D")),
-            new Claim("oid", objectId.ToString("D")),
-            new Claim("scp", "access_as_user")
+            new Claim("oid", objectId.ToString("D"))
         ], "ValidatedEntraToken");
         if (displayName != null)
             identity.AddClaim(new Claim("name", displayName));
@@ -155,9 +154,10 @@ public sealed class AdminServiceTests
     private sealed class Fixture : IDisposable
     {
         private readonly SqliteConnection _connection = new("Data Source=:memory:");
+        private readonly ServiceProvider _services;
         public TestDbContext Db { get; }
         public IConfigurationRoot Configuration { get; } = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
-            ["Entra:TenantId"] = _tenantId.ToString("D")
+            ["Authentication:Schemes:Bearer:Authority"] = $"https://login.microsoftonline.com/{_tenantId:D}/v2.0"
         }).Build();
         public AdminService Service { get; }
 
@@ -166,6 +166,7 @@ public sealed class AdminServiceTests
             _connection.Open();
             Db = new(_connection);
             Db.Database.EnsureCreated();
+            _services = new ServiceCollection().AddSingleton<AppDbContext>(Db).AddSingleton<IConfiguration>(Configuration).BuildServiceProvider();
             var context = new DefaultHttpContext {
                 User = new ClaimsPrincipal(new ClaimsIdentity([
                     new Claim("tid", _tenantId.ToString("D")),
@@ -177,9 +178,23 @@ public sealed class AdminServiceTests
             Service = new(Db, audit, Configuration);
         }
 
+        public async Task<bool> ApplyIdentityAsync(ClaimsIdentity identity)
+        {
+            var options = new JwtBearerOptions { Authority = Configuration["Authentication:Schemes:Bearer:Authority"] };
+            var context = new TokenValidatedContext(
+                new DefaultHttpContext { RequestServices = _services },
+                new AuthenticationScheme(JwtBearerDefaults.AuthenticationScheme, null, typeof(JwtBearerHandler)),
+                options) {
+                Principal = new ClaimsPrincipal(identity)
+            };
+            await new DbAuthService(NullLogger<DbAuthService>.Instance).OnTokenValidatedAsync(context, CancellationToken.None);
+            return context.Result?.Failure is null;
+        }
+
         public void Dispose()
         {
             Db.Dispose();
+            _services.Dispose();
             _connection.Dispose();
             ((IDisposable)Configuration).Dispose();
         }

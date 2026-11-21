@@ -16,8 +16,6 @@ public sealed class EntraAuthenticationTests : EntraTestBase
     [InlineData("missing-tenant")]
     [InlineData("invalid-tenant")]
     [InlineData("wrong-tenant")]
-    [InlineData("missing-scope")]
-    [InlineData("wrong-scope")]
     public async Task InvalidTokenCannotAccessApi(string defect)
     {
         var claims = CreateClaims();
@@ -57,13 +55,6 @@ public sealed class EntraAuthenticationTests : EntraTestBase
                 claims.RemoveAll(x => x.Type == "tid");
                 claims.Add(new("tid", "44444444-4444-4444-4444-444444444444"));
                 break;
-            case "missing-scope":
-                claims.RemoveAll(x => x.Type == "scp");
-                break;
-            case "wrong-scope":
-                claims.RemoveAll(x => x.Type == "scp");
-                claims.Add(new("scp", "access_as_user.other"));
-                break;
             default:
                 throw new ArgumentException("Unknown test token defect.", nameof(defect));
         }
@@ -76,6 +67,21 @@ public sealed class EntraAuthenticationTests : EntraTestBase
     {
         using var response = await PostGraphQLAsync("{ session { isAdmin } }");
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("access_as_user")]
+    public async Task ValidatedIdAndAccessTokensCanAccessApi(string? scope)
+    {
+        var claims = CreateClaims();
+        if (scope is not null)
+            claims.Add(new("scp", scope));
+        using var result = await ReadGraphQLAsync("{ session { isAdmin name } }", CreateToken(claims));
+        result.RootElement.TryGetProperty("errors", out _).ShouldBeFalse();
+        var session = result.RootElement.GetProperty("data").GetProperty("session");
+        session.GetProperty("name").GetString().ShouldBe("Entra test user");
+        session.GetProperty("isAdmin").GetBoolean().ShouldBeFalse();
     }
 
     [Fact]

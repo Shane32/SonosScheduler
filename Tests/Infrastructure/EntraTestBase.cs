@@ -31,9 +31,11 @@ public abstract class EntraTestBase : TestBase
         // The shared GraphQL helper relaxes JWT validation. These tests must use the real middleware rules.
         webHostBuilder.UseEnvironment("Test").UseTestServer().UseStartup<Startup>();
         webHostBuilder.ConfigureAppConfiguration((_, builder) => builder.AddInMemoryCollection(new Dictionary<string, string?> {
-            ["Entra:TenantId"] = TenantId.ToString("D"),
-            ["Entra:ClientId"] = ClientId.ToString("D"),
-            ["Entra:RequireSignIn"] = "true"
+            ["Authentication:DefaultScheme"] = JwtBearerDefaults.AuthenticationScheme,
+            ["Authentication:Schemes:Bearer:Authority"] = Issuer,
+            ["Authentication:Schemes:Bearer:ValidAudience"] = ClientId.ToString("D"),
+            ["Authentication:Schemes:Bearer:ValidateIssuer"] = "true",
+            ["Sonos:RequireSignIn"] = "true"
         }));
         webHostBuilder.ConfigureTestServices(services => {
             services.AddSingleton<TimeProvider>(TimeProvider);
@@ -52,7 +54,10 @@ public abstract class EntraTestBase : TestBase
                 services.Remove(hostedService);
             services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options => {
                 // Only replace key discovery. Production token and identity validation stays active.
-                var configuration = new OpenIdConnectConfiguration { Issuer = Issuer };
+                var configuration = new OpenIdConnectConfiguration {
+                    Issuer = Issuer,
+                    TokenEndpoint = $"https://login.microsoftonline.com/{TenantId:D}/oauth2/v2.0/token"
+                };
                 configuration.SigningKeys.Add(new RsaSecurityKey(new RSAParameters {
                     Modulus = SigningKey.Parameters.Modulus,
                     Exponent = SigningKey.Parameters.Exponent
@@ -73,8 +78,7 @@ public abstract class EntraTestBase : TestBase
         [
             new("tid", TenantId.ToString("D")),
             new("oid", ObjectId.ToString("D")),
-            new("name", "Entra test user"),
-            new("scp", "access_as_user")
+            new("name", "Entra test user")
         ];
 
     protected string CreateToken(IEnumerable<Claim>? claims = null, string? issuer = null, string? audience = null, SecurityKey? signingKey = null, bool expired = false, bool omitSignature = false)
@@ -93,7 +97,6 @@ public abstract class EntraTestBase : TestBase
     protected async Task<HttpResponseMessage> PostGraphQLAsync(string query, string? token = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, GetGraphQLPath()) { Content = JsonContent.Create(new { query }) };
-        request.Headers.Add("X-Sonos-Request", "1");
         if (token is not null)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return await Client.SendAsync(request, CancellationToken.None);

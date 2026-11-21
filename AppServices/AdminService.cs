@@ -9,7 +9,7 @@ public sealed class AdminService(AppDbContext db, AuditService audit, IConfigura
     {
         if (await db.Administrators.AnyAsync(ct))
             return;
-        var configuredObjectId = configuration["Entra:BootstrapAdminObjectId"];
+        var configuredObjectId = configuration["Administrators:BootstrapObjectId"];
         if (string.IsNullOrWhiteSpace(configuredObjectId))
             return;
         if (!Guid.TryParse(configuredObjectId, out var objectId))
@@ -24,8 +24,9 @@ public sealed class AdminService(AppDbContext db, AuditService audit, IConfigura
         displayName = displayName?.Trim() ?? "";
         if (displayName.Length > 200)
             throw new ClientError("An administrator display name cannot exceed 200 characters.");
-        if (!Guid.TryParse(configuration["Entra:TenantId"], out var tenantId) || tenantId == Guid.Empty)
-            throw new InvalidOperationException("An Entra tenant ID must be configured before granting administrator access.");
+        if (!Uri.TryCreate(configuration["Authentication:Schemes:Bearer:Authority"], UriKind.Absolute, out var authority) ||
+            !Guid.TryParse(authority.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(), out var tenantId) || tenantId == Guid.Empty)
+            throw new InvalidOperationException("A tenant-specific authentication authority must be configured before granting administrator access.");
         if (await db.Administrators.AnyAsync(x => x.TenantId == tenantId && x.ObjectId == objectId, ct))
             throw new ClientError("This Entra account is already an administrator.");
         var admin = new AdministratorGrant { TenantId = tenantId, ObjectId = objectId, DisplayName = displayName };

@@ -11,12 +11,12 @@ A local-network Sonos controller and scheduler built with React, Bootstrap/Sass,
 
 Install the SDK in `global.json`, Node/npm from `ReactApp/package.json`, and SQL Server LocalDB.
 
-1. Register an Entra single-page application and configure `Entra:TenantId`, `Entra:ClientId`, and `Entra:BootstrapAdminObjectId` with `dotnet user-secrets set --project AppServer`. See [authentication setup](docs/deployment.md#entra-registration-and-private-configuration).
+1. Register an Entra single-page application and configure the template's `Authentication:Schemes:Bearer` settings and `Administrators:BootstrapObjectId` with `dotnet user-secrets set --project AppServer`. See [authentication setup](docs/deployment.md#entra-registration-and-private-configuration).
 2. Run `npm ci --ignore-scripts` and `npm run dev` in `ReactApp`.
 3. Run `dotnet run --project AppServer --launch-profile http` and open `http://localhost:5145`.
 4. Sign in with Microsoft, open Admin, add your speaker subnet, and refresh speakers.
 
-LAN visitors can control rooms and schedules without signing in by default; set `Entra:RequireSignIn` to require Entra sign-in. Only granted Entra administrators can configure networks, manage administrators, and read logs. Administrator names are readable labels refreshed from Entra at sign-in; permissions use tenant/object IDs. There are no local usernames or passwords. Keep private configuration in User Secrets for development and protected server configuration for IIS.
+LAN visitors can control rooms and schedules without signing in by default; set `Sonos:RequireSignIn` to require Entra sign-in. Only granted Entra administrators can configure networks, manage administrators, and read logs. Administrator names are readable labels refreshed from Entra at sign-in; permissions use tenant/object IDs. There are no local usernames or passwords. Keep private configuration in User Secrets for development and protected server configuration for IIS; optional Key Vault support is retained from the template.
 
 ## Build and deploy
 

@@ -63,8 +63,6 @@ public class TestBase : GraphQLTestBase<Startup>
     /// <param name="noTracking">Whether to clear the change tracker before and after running the query.</param>
     public async Task<ExecutionResponse> RunQueryAsync(string query, object? variables = null, bool noTracking = true)
     {
-        if (!Client.DefaultRequestHeaders.Contains("X-Sonos-Request"))
-            Client.DefaultRequestHeaders.Add("X-Sonos-Request", "1");
         if (noTracking)
             Db.ChangeTracker.Clear();
         var response = await base.RunQueryAsync(query, variables);

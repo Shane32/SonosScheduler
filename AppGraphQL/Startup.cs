@@ -45,7 +45,7 @@ public class Startup
                     _logError(logger, ctx.Exception.Message, ctx.Exception);
                 }
             })
-
+            .AddJwtBearerAuthentication(options => options.EnableJwtEvents = true)
             .UsePersistedDocuments(o => {
                 o.AllowOnlyPersistedDocuments = false;
                 o.AllowedPrefixes.Clear();

@@ -9,6 +9,7 @@ export interface AuthConfiguration {
   redirectUri: string;
   logoutRedirectUri: string;
   requireSignIn: boolean;
+  tokenEndpoint: string | null;
 }
 
 export const AuthConfigurationContext = createContext<AuthConfiguration | null>(null);

@@ -1,5 +1,6 @@
 using AppServices.Scheduling;
 using AppServices.Sonos;
+using Microsoft.AspNetCore.Authorization;
 
 namespace AppServices;
 
@@ -11,7 +12,7 @@ public static class Startup
         services.AddHttpContextAccessor();
         services.AddScoped<AuditService>();
         services.AddScoped<AdminService>();
-        services.AddScoped<EntraIdentityService>();
+        services.AddScoped<IAuthorizationHandler, AdministratorAuthorizationHandler>();
         services.AddScoped<DatabaseStartupService>();
         services.AddSingleton<ExceptionLogService>();
         services.AddHttpClient<SonosClient>(client => client.Timeout = TimeSpan.FromSeconds(5))

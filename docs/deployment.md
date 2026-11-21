@@ -16,7 +16,7 @@ Publishing installs the client dependencies, runs GraphQL codegen and the produc
 
 ## IIS setup
 
-1. Install IIS, its Application Initialization feature, and the .NET 11 Hosting Bundle matching this application. See Microsoft's [ASP.NET Core IIS guide](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/iis/?view=aspnetcore-11.0).
+1. Install IIS with Application Initialization and WebSocket Protocol, and the .NET 11 Hosting Bundle matching this application. See Microsoft's [ASP.NET Core IIS guide](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/iis/?view=aspnetcore-11.0).
 2. Create a dedicated application pool with **No Managed Code**, x64 enabled, **Start Mode = AlwaysRunning**, **Idle Time-out = 0**, and **Maximum Worker Processes = 1**. Disable overlapping recycling; use planned maintenance for replacement. The background workers must stay running without browser traffic.
 3. Create a site or convert a virtual directory into an IIS **application**, using the dedicated pool. Set **Preload Enabled = True**, enable Anonymous Authentication, and configure a LAN hostname binding and HTTPS. Restrict inbound access to the intended LAN with server/network firewall rules. Configure [IIS Application Initialization](https://learn.microsoft.com/en-us/iis/get-started/whats-new-in-iis-8/iis-80-application-initialization) so the pool starts the app after reboot/recycle.
 4. Copy `artifacts/iis` to the site directory while the application is stopped or `app_offline.htm` is present. Keep environment-specific configuration outside the build artifact. The pool identity needs read/execute access to the published files. Configure the private environment settings described below on the application pool before starting it.
@@ -44,32 +44,36 @@ Use one Microsoft Entra app registration in the intended directory:
 
 1. Select **Accounts in this organizational directory only**.
 2. Add the **Single-page application** platform. Register the exact callback and sign-out return URLs: `https://<app-host>/<application-path>/oauth/callback` and `https://<app-host>/<application-path>/oauth/logout`. Add `http://localhost:5145/oauth/callback` and `http://localhost:5145/oauth/logout` for development.
-3. Under **Expose an API**, set the application ID URI to `api://<client-id>` and add the delegated `access_as_user` scope. Allow the SPA client to request that scope and grant consent as required by the directory's policy.
-4. Request `openid profile offline_access` alongside the API scope, as the client already does. The `profile` scope supplies the standard display-name claim in ID tokens; `name` is also a standard access-token claim. The server refreshes existing administrator labels from the validated API access token; ID tokens are not accepted as API credentials. No additional optional-claim configuration or directory-read permission is required.
-5. Use authorization code flow with PKCE. Do not create a client secret or enable the legacy implicit grant for this SPA. The app does not need Microsoft Graph directory-read permissions to maintain administrator grants.
+3. The client requests `openid profile offline_access` and uses the ID token as its bearer credential, matching the template. The `profile` scope supplies the display-name claim; the server refreshes existing administrator labels from the validated token. An exposed API scope is not needed for this flow.
+4. Use authorization code flow with PKCE. Do not create a client secret or enable the legacy implicit grant for this SPA. The app does not need Microsoft Graph directory-read permissions to maintain administrator grants.
 
 See Microsoft's [SPA configuration](https://learn.microsoft.com/en-us/entra/identity-platform/scenario-spa-app-configuration) and [authorization code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow) documentation.
 
 Configure these server settings:
 
-| Key | Purpose |
-| --- | --- |
-| `Entra:TenantId` | Directory GUID accepted by the API and used for administrator grants. |
-| `Entra:ClientId` | Application/client GUID for the SPA and its exposed API. |
-| `Entra:BootstrapAdminObjectId` | First administrator's user object GUID in that directory; used only while no grants exist. |
-| `Entra:RequireSignIn` | `false` preserves public LAN controls and schedules; `true` requires Entra authentication for them. Administration always requires a grant. |
+| Key                                            | Purpose                                                                                                                                     |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Authentication:DefaultScheme`                 | `Bearer`, matching the template's JWT authentication scheme.                                                                                |
+| `Authentication:Schemes:Bearer:Authority`      | `https://login.microsoftonline.com/<tenant-id>/v2.0`, using the directory GUID.                                                             |
+| `Authentication:Schemes:Bearer:ValidAudience`  | Application/client GUID for the SPA.                                                                                                        |
+| `Authentication:Schemes:Bearer:ValidateIssuer` | `true` for the configured single-tenant registration.                                                                                       |
+| `Administrators:BootstrapObjectId`             | First administrator's user object GUID in that directory; used only while no grants exist.                                                  |
+| `Sonos:RequireSignIn`                          | `false` preserves public LAN controls and schedules; `true` requires Entra authentication for them. Administration always requires a grant. |
+| `KeyVaultName`                                 | Optional Azure Key Vault name; leave empty for a local installation.                                                                        |
+| `AZURE_CLIENT_ID`                              | Optional user-assigned managed identity client GUID for the restored OAuth token proxy. Leave unset for direct SPA token exchange.          |
 
 Find a user's object ID in **Entra ID → Users → the user → Overview → Object ID**, inside the configured directory. Guest users also have an object ID in that directory. Use this value for bootstrap and for subsequent administrator grants.
 
-Authority, API scope, and redirect URLs are derived from these settings and the application's URL and path. There is no client secret. The browser must receive its client ID, authority, scope, and redirect URLs to sign in; these are public OAuth configuration, even when their deployment-specific values are kept outside Git.
+The browser receives its client ID, authority, scopes, and redirect URLs from `/api/oauth/config`, derived from these settings and the application's URL and path. These are public OAuth configuration, even when their deployment-specific values are kept outside Git. There is no client secret. The restored `OAuthController` can proxy token exchange using a managed identity assertion when `AZURE_CLIENT_ID` is configured; the Entra registration must trust that identity through a federated credential. Without it, this on-premises SPA exchanges its PKCE authorization code directly with Entra.
 
 For development, keep the private values in [.NET User Secrets](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets), outside the repository:
 
 ```powershell
-dotnet user-secrets set "Entra:TenantId" "<tenant-id>" --project AppServer
-dotnet user-secrets set "Entra:ClientId" "<client-id>" --project AppServer
-dotnet user-secrets set "Entra:BootstrapAdminObjectId" "<admin-object-id>" --project AppServer
-dotnet user-secrets set "Entra:RequireSignIn" "false" --project AppServer
+dotnet user-secrets set "Authentication:Schemes:Bearer:Authority" "https://login.microsoftonline.com/<tenant-id>/v2.0" --project AppServer
+dotnet user-secrets set "Authentication:Schemes:Bearer:ValidAudience" "<client-id>" --project AppServer
+dotnet user-secrets set "Authentication:Schemes:Bearer:ValidateIssuer" "true" --project AppServer
+dotnet user-secrets set "Administrators:BootstrapObjectId" "<admin-object-id>" --project AppServer
+dotnet user-secrets set "Sonos:RequireSignIn" "false" --project AppServer
 ```
 
 The SDK project has a generic User Secrets identifier; the settings themselves are stored in the current developer's profile. User Secrets are a development configuration store, not an encrypted production vault. Do not copy their file into the published application.
@@ -77,15 +81,19 @@ The SDK project has a generic User Secrets identifier; the settings themselves a
 For IIS, use protected application-pool configuration/environment variables or another protected server configuration source. Set values on the dedicated pool, restrict access to the server configuration to administrators, and recycle the pool after changing them. Do not put private values into checked-in `appsettings.json`, `web.config`, frontend environment files, build artifacts, or a public publish profile. IIS environment-variable names use double underscores:
 
 ```text
-Entra__TenantId=<tenant-id>
-Entra__ClientId=<client-id>
-Entra__BootstrapAdminObjectId=<admin-object-id>
-Entra__RequireSignIn=false
+Authentication__DefaultScheme=Bearer
+Authentication__Schemes__Bearer__Authority=https://login.microsoftonline.com/<tenant-id>/v2.0
+Authentication__Schemes__Bearer__ValidAudience=<client-id>
+Authentication__Schemes__Bearer__ValidateIssuer=true
+Administrators__BootstrapObjectId=<admin-object-id>
+Sonos__RequireSignIn=false
 ConnectionStrings__AppDbContext=<private-connection-string>
 ASPNETCORE_ENVIRONMENT=Production
 ```
 
 HTTPS and the exact registered origin are required for a deployed sign-in flow. When changing a hostname or IIS application path, update the registered redirect URLs and rebuild with the matching `AppBasePath`.
+
+The template's optional Key Vault provider is retained. `KeyVaultName` is read after the local JSON file, development User Secrets, and environment variables have been loaded. When configured, Key Vault secrets are loaded afterward and can override those settings; use double hyphens in vault secret names for configuration separators, such as `Authentication--Schemes--Bearer--ValidAudience`. Debug builds use `VisualStudioCredential`; Release builds use `DefaultAzureCredential`. Grant the selected identity permission to read the vault's secrets. An empty `KeyVaultName` skips the provider entirely, so a local IIS deployment needs no Azure runtime identity.
 
 ## Database and first administrator
 
@@ -99,7 +107,7 @@ Use a trusted SQL Server certificate and `TrustServerCertificate=false` when pro
 
 Store the connection string in User Secrets for development or the protected IIS configuration described above. Use integrated Windows authentication to SQL Server where possible.
 
-Startup applies generated EF migrations and creates the configured Entra administrator grant only if no grants exist. The runtime SQL identity therefore needs schema migration permissions; alternatively apply the migration with a deployment identity before startup. Sign in with that Entra account, add another administrator by their user object ID in the same directory, and remove `Entra:BootstrapAdminObjectId` from configuration. An optional display name makes a new grant recognizable before its first sign-in; subsequent validated tokens refresh that label from Entra. There is no local password login or public first-user registration endpoint.
+Startup applies generated EF migrations and creates the configured Entra administrator grant only if no grants exist. The runtime SQL identity therefore needs schema migration permissions; alternatively apply the migration with a deployment identity before startup. Sign in with that Entra account, add another administrator by their user object ID in the same directory, and remove `Administrators:BootstrapObjectId` from configuration. An optional display name makes a new grant recognizable before its first sign-in; subsequent validated tokens refresh that label from Entra. There is no local password login or public first-user registration endpoint.
 
 `AdministratorGrants` contains its row ID, tenant ID, user object ID, and human-readable display name. The display name is a label, not a login name or authorization key. The Entra migration drops the previous local administrator table and its credentials. Back up the database before upgrading; old local accounts cannot be used after the upgrade. Any retained private configuration or credential files from an earlier deployment should be removed after moving to Entra.
 

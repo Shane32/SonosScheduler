@@ -15,11 +15,16 @@ root.render(
 );
 
 async function start() {
-  const response = await fetch(`${import.meta.env.BASE_URL}api/auth/config`, { credentials: "same-origin", cache: "no-store" });
+  const response = await fetch(`${import.meta.env.BASE_URL}api/oauth/config`, { credentials: "same-origin", cache: "no-store" });
   if (!response.ok) throw new Error("Could not load sign-in configuration.");
   const config: AuthConfiguration = await response.json();
+  class TemplateAuthManager extends AuthManager {
+    protected override async getTokenEndpointUrl(grantType: string): Promise<string> {
+      return config.tokenEndpoint ?? super.getTokenEndpointUrl(grantType);
+    }
+  }
   const manager = config.enabled
-    ? new AuthManager({
+    ? new TemplateAuthManager({
         id: `sonos:${config.clientId}:${import.meta.env.BASE_URL}`,
         clientId: config.clientId,
         authority: config.authority,
@@ -37,29 +42,36 @@ async function start() {
         },
       })
     : undefined;
+  async function getIdToken() {
+    if (manager?.isAuthenticated()) {
+      try {
+        return await manager.getIdToken();
+      } catch {
+        manager.localLogout();
+      }
+    }
+    return undefined;
+  }
   const client = new GraphQLClient({
     url: `${import.meta.env.BASE_URL}api/graphql`,
     sendDocumentIdAsQuery: true,
     defaultFetchPolicy: "no-cache",
     transformRequest: async (request) => {
-      let token: string | undefined;
-      if (manager?.isAuthenticated()) {
-        try {
-          token = await manager.getAccessToken();
-        } catch {
-          manager.localLogout();
-        }
-      }
+      const token = await getIdToken();
       return {
         ...request,
         credentials: "same-origin",
         headers: {
           ...request.headers,
-          "X-Sonos-Request": "1",
           // eslint-disable-next-line @typescript-eslint/naming-convention
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       };
+    },
+    generatePayload: async () => {
+      const token = await getIdToken();
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      return token ? { Authorization: `Bearer ${token}` } : {};
     },
   });
   manager?.addEventListener("login", () => client.resetStore());

@@ -1,10 +1,16 @@
+using System.Diagnostics;
 using AppGraphQL;
 using AppServices;
+using AutoMapper;
+using AutoMapper.EquivalencyExpression;
+using Azure.Core;
+using Azure.Identity;
 using GraphQL.AspNetCore3;
+using GraphQL.Linq;
 using GraphQL.Types;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.ResponseCompression;
-using Microsoft.IdentityModel.Tokens;
 
 namespace AppServer;
 
@@ -12,47 +18,58 @@ public sealed class Startup(IConfiguration configuration)
 {
     public void ConfigureServices(IServiceCollection services)
     {
-        var entra = EntraConfiguration.Read(configuration);
-        services.AddSingleton(entra);
-        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => {
+        // Bearer authority, audience, and issuer validation use the template's Authentication settings.
+        services.AddAuthentication(configuration["Authentication:DefaultScheme"] ?? JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => {
             options.MapInboundClaims = false;
-            if (entra.Enabled) {
-                options.Authority = entra.Authority;
-                options.Audience = entra.ClientId;
-            }
-            options.TokenValidationParameters = new TokenValidationParameters {
-                ValidateIssuer = true,
-                ValidateAudience = true,
-                ValidateLifetime = true,
-                RequireSignedTokens = true,
-                ValidateIssuerSigningKey = true,
-                ValidIssuer = entra.Authority,
-                ValidAudience = entra.ClientId,
-                ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
-                NameClaimType = "name",
-                RoleClaimType = System.Security.Claims.ClaimTypes.Role,
-                ClockSkew = TimeSpan.FromMinutes(1)
-            };
-            options.Events.OnTokenValidated = async context => {
-                if (context.Principal?.Identity is not System.Security.Claims.ClaimsIdentity identity ||
-                    !await context.HttpContext.RequestServices.GetRequiredService<EntraIdentityService>().ApplyAsync(identity, context.HttpContext.RequestAborted))
-                    context.Fail("A delegated Entra access token for the configured tenant is required.");
+            options.TokenValidationParameters.NameClaimType = "name";
+            options.Events = new() {
+                OnTokenValidated = async context => {
+                    var dbAuthService = context.HttpContext.RequestServices.GetRequiredService<DbAuthService>();
+                    await dbAuthService.OnTokenValidatedAsync(context, context.HttpContext.RequestAborted);
+                }
             };
         });
+        services.AddSingleton<DbAuthService>();
         services.AddAuthorization(ConfigureAuthorizationOptions);
-        services.AddDbContext<AppDbContext>(options => options.UseSqlServer(configuration.GetConnectionString(nameof(AppDbContext))));
+
+        var origins = configuration.GetSection("Cors").GetValue<string>("AllowedOrigins")?.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries) ?? [];
+        services.AddCors(options => options.AddDefaultPolicy(builder => builder.WithOrigins(origins).AllowAnyMethod().AllowAnyHeader().AllowCredentials()));
+        services.AddDbContext<AppDbContext>(options => {
+#if DEBUG
+            options.LogTo(message => Debug.WriteLine(message), LogLevel.Debug);
+#endif
+            options.UseSqlServer(configuration.GetConnectionString(nameof(AppDbContext)), sql => {
+                if (AppDbContext.Schema != null)
+                    sql.MigrationsHistoryTable("__EFMigrationsHistory", AppDbContext.Schema);
+            });
+        });
         services.AddHttpContextAccessor();
         services.AddSingleton(configuration);
-        services.AddAutoMapper((provider, config) => config.AddProfile(provider.GetRequiredService<AppGraphQL.AutoMapper.AutoMapperProfile>()), typeof(Program).Assembly);
+        services.AddAutoMapper((provider, config) => {
+            config.AddCollectionMappers();
+            config.UseEntityFrameworkCoreModel<AppDbContext>(provider);
+            config.ConstructServicesUsing(provider.GetRequiredService);
+            config.AddProfile(provider.GetRequiredService<AppGraphQL.AutoMapper.AutoMapperProfile>());
+        }, typeof(Program).Assembly);
         services.AddRouting();
         services.AddControllers();
+        services.AddSingleton<TokenCredential>(provider => {
+            var clientId = provider.GetRequiredService<IConfiguration>()["AZURE_CLIENT_ID"];
+            if (string.IsNullOrWhiteSpace(clientId))
+                return new DefaultAzureCredential();
+            if (!Guid.TryParse(clientId, out _))
+                throw new InvalidOperationException("AZURE_CLIENT_ID must be the runtime user-assigned managed identity's client ID.");
+            return new ManagedIdentityCredential(ManagedIdentityId.FromUserAssignedClientId(clientId));
+        });
+        services.AddHttpClient("MicrosoftOAuth", client => client.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
         services.AddHttpsRedirection(options => options.HttpsPort = 443);
         services.AddResponseCompression(options => {
             options.EnableForHttps = true;
             options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Append("application/graphql-response+json");
         });
-        AppServices.Startup.ConfigureServices(services);
         AppGraphQL.Startup.ConfigureGraphQL(services, configuration);
+        AppServices.Startup.ConfigureServices(services);
     }
 
     public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -60,18 +77,6 @@ public sealed class Startup(IConfiguration configuration)
         if (env.IsProduction())
             app.UseHttpsRedirection();
         app.UseResponseCompression();
-        app.Use(async (context, next) => {
-            if (context.Request.Path.StartsWithSegments("/api") && HttpMethods.IsPost(context.Request.Method)) {
-                // A custom header forces cross-origin callers through a CORS preflight.
-                if (context.Request.Headers["X-Sonos-Request"] != "1") { context.Response.StatusCode = 400; return; }
-                if (context.Request.Headers.TryGetValue("Origin", out var origin) &&
-                    (!Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var uri) || uri.Scheme != context.Request.Scheme || !string.Equals(uri.Authority, context.Request.Host.Value, StringComparison.OrdinalIgnoreCase))) {
-                    context.Response.StatusCode = 403;
-                    return;
-                }
-            }
-            await next(context);
-        });
         if (!env.IsDevelopment())
             app.UseHsts();
         var staticPath = Path.Combine(env.WebRootPath ?? "wwwroot", "static");
@@ -91,26 +96,50 @@ public sealed class Startup(IConfiguration configuration)
                     spa.UseProxyToSpaDevelopmentServer("http://localhost:5173");
             });
         });
+        app.UseWebSockets();
+        var allowedOrigins = configuration.GetSection("Cors").GetValue<string>("AllowedOrigins")?.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries) ?? [];
+        app.Use(async (context, next) => {
+            if (context.WebSockets.IsWebSocketRequest && context.Request.Path.StartsWithSegments("/api/graphql") &&
+                context.Request.Headers.TryGetValue("Origin", out var origin)) {
+                var sameOrigin = Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var uri) &&
+                    uri.Scheme == context.Request.Scheme && string.Equals(uri.Authority, context.Request.Host.Value, StringComparison.OrdinalIgnoreCase);
+                if (!sameOrigin && !allowedOrigins.Contains(origin.ToString(), StringComparer.OrdinalIgnoreCase)) {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return;
+                }
+            }
+            await next(context);
+        });
         app.UseRouting();
+        app.UseCors();
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseGraphQL("/api/graphql", options => {
-            options.AuthorizationRequired = EntraConfiguration.Read(configuration).RequireSignIn;
+            options.AuthorizationRequired = configuration.GetValue<bool>("Sonos:RequireSignIn");
             options.HandleGet = false;
             options.EnableBatchedRequests = false;
             options.ReadQueryStringOnPost = true;
             options.ValidationErrorsReturnBadRequest = false;
             options.CsrfProtectionEnabled = true;
             options.ReadFormOnPost = false;
+            options.WebSockets.KeepAliveMode = GraphQL.AspNetCore3.WebSockets.KeepAliveMode.TimeoutWithPayload;
+            options.WebSockets.KeepAliveTimeout = TimeSpan.FromSeconds(10);
+            options.WebSockets.SupportedWebSocketSubProtocols = [GraphQL.AspNetCore3.WebSockets.GraphQLWs.SubscriptionServer.SubProtocol];
         });
-        if (env.IsDevelopment())
-            app.UseGraphQLGraphiQL("/api/graphql", new() { GraphQLEndPoint = "/api/graphql" });
+        app.UseGraphQLGraphiQL("/api/graphql", new() {
+            GraphQLEndPoint = "graphql",
+            SubscriptionsEndPoint = "graphql",
+            HeaderEditorEnabled = true,
+            RequestCredentials = GraphQL.Server.Ui.GraphiQL.RequestCredentials.SameOrigin,
+            GraphQLWsSubscriptions = true
+        });
         app.UseEndpoints(endpoints => endpoints.MapControllers());
     }
 
     public async Task RunInitializationTestsAsync(IServiceProvider provider, CancellationToken ct = default)
     {
         provider.GetRequiredService<ISchema>().Initialize();
+        provider.GetRequiredService<IEfGraphQLService<AppDbContext>>().GetPrimaryKeyNames<NetworkGroup>();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await scope.ServiceProvider.GetRequiredService<DatabaseStartupService>().MigrateAsync(ct);
@@ -125,6 +154,7 @@ public sealed class Startup(IConfiguration configuration)
         await scope.ServiceProvider.GetRequiredService<AdminService>().BootstrapAsync(ct);
     }
 
-    internal static void ConfigureAuthorizationOptions(Microsoft.AspNetCore.Authorization.AuthorizationOptions options)
-        => options.AddPolicy(SecurityPolicies.ADMIN_POLICY, builder => builder.RequireRole("Admin"));
+    internal static void ConfigureAuthorizationOptions(AuthorizationOptions options)
+        => options.AddPolicy(SecurityPolicies.ADMIN_POLICY, builder => builder.RequireAuthenticatedUser().RequireRole("Admin")
+            .AddRequirements(new AdministratorAuthorizationHandler.Requirement()));
 }
