@@ -3,6 +3,33 @@ namespace Mutations;
 public sealed class SonosSchedules : TestBase
 {
     [Fact]
+    public async Task CreateWithBrowserIanaAndWindowsTimeZones()
+    {
+        await Db.SeedAsync<NetworkGroup>();
+        var response = await RunQueryAsync("""
+            mutation {
+              iana: schedules {
+                add(input: {
+                  groupId: "1", name: "Browser time zone", daysOfWeek: 127, localTime: "08:00", timeZoneId: "America/New_York",
+                  enabled: true, onlyIfIdle: true, libraryObjectId: "S:folder", libraryTitle: "Morning folder", selectionMode: "PlayAll",
+                  speakers: [{speakerId: "1", enabled: true}], exceptions: []
+                }) { id name timeZoneId }
+              }
+              windows: schedules {
+                add(input: {
+                  groupId: "1", name: "Windows time zone", daysOfWeek: 127, localTime: "08:00", timeZoneId: "Eastern Standard Time",
+                  enabled: true, onlyIfIdle: true, libraryObjectId: "S:folder", libraryTitle: "Morning folder", selectionMode: "PlayAll",
+                  speakers: [{speakerId: "1", enabled: true}], exceptions: []
+                }) { id name timeZoneId }
+              }
+            }
+            """);
+
+        response.ShouldMatchApproved();
+        (await Db.Schedules.OrderBy(x => x.Id).Select(x => x.TimeZoneId).ToArrayAsync()).ShouldBe(["America/New_York", "Eastern Standard Time"]);
+    }
+
+    [Fact]
     public async Task CreateEditPauseAndDelete()
     {
         await Db.SeedAsync<NetworkGroup>();

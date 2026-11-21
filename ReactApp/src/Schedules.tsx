@@ -181,6 +181,15 @@ export function Schedules({ group, busy, run }: { group: NetworkGroup; busy: boo
 }
 
 type ScheduleInput = SonosAddScheduleMutationVariables["input"];
+
+function getBrowserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
 function ScheduleEditor({
   group,
   schedule,
@@ -199,7 +208,7 @@ function ScheduleEditor({
     name: schedule?.name ?? "",
     daysOfWeek: schedule?.daysOfWeek ?? 62,
     localTime: schedule?.localTime ?? "08:00",
-    timeZoneId: schedule?.timeZoneId ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timeZoneId: schedule?.timeZoneId ?? getBrowserTimeZone(),
     enabled: schedule?.enabled ?? true,
     onlyIfIdle: schedule?.onlyIfIdle ?? true,
     libraryObjectId: schedule?.libraryObjectId ?? "",
@@ -292,7 +301,7 @@ function ScheduleEditor({
               </div>
             </fieldset>
             <div className="row g-3 mb-4">
-              <div className="col-12 col-sm-4">
+              <div className="col-12 col-sm-6">
                 <label className="form-label" htmlFor="start-time">
                   Start time
                 </label>
@@ -302,22 +311,13 @@ function ScheduleEditor({
                   type="time"
                   step="60"
                   className="form-control"
+                  aria-describedby="start-time-zone"
                   value={input.localTime}
                   onChange={(e) => set("localTime", e.target.value)}
                 />
-              </div>
-              <div className="col-12 col-sm-8">
-                <label className="form-label" htmlFor="time-zone">
-                  Time zone
-                </label>
-                <input
-                  id="time-zone"
-                  required
-                  className="form-control"
-                  value={input.timeZoneId}
-                  onChange={(e) => set("timeZoneId", e.target.value)}
-                />
-                <small className="text-body-secondary">For example, America/New_York. Follows daylight saving time.</small>
+                <div id="start-time-zone" className="form-text">
+                  Time zone: {input.timeZoneId}
+                </div>
               </div>
             </div>
             <section className="editor-section">

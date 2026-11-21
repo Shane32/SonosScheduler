@@ -1,3 +1,4 @@
+using AppServices;
 using AppServices.Scheduling;
 using AppServices.Sonos;
 
@@ -7,6 +8,47 @@ public sealed class ScheduleClockTests
 {
     private static Schedule Example() => new() { Id = 1, Name = "Morning", GroupId = 1, DaysOfWeek = 127, LocalTime = "08:00", TimeZoneId = "America/New_York", LibraryObjectId = "S:folder", Speakers = [new() { SpeakerId = 1 }], UpdatedAt = DateTimeOffset.MinValue };
     private static DateTimeOffset Utc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
+
+    [Theory]
+    [InlineData("America/New_York")]
+    [InlineData("Eastern Standard Time")]
+    [InlineData("US/Eastern")]
+    public void ValidationAcceptsIanaWindowsAndAliasIdsWithoutChangingStoredId(string timeZoneId)
+    {
+        var s = Example();
+        s.TimeZoneId = timeZoneId;
+
+        Should.NotThrow(() => ScheduleClock.Validate(s));
+
+        s.TimeZoneId.ShouldBe(timeZoneId);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("Invalid/Time_Zone")]
+    public void ValidationRejectsUnknownOrBlankTimeZoneWithClientError(string timeZoneId)
+    {
+        var s = Example();
+        s.TimeZoneId = timeZoneId;
+
+        var error = Should.Throw<ClientError>(() => ScheduleClock.Validate(s));
+
+        error.Message.ShouldBe("The schedule time zone is not recognized.");
+    }
+
+    [Theory]
+    [InlineData("America/New_York")]
+    [InlineData("Eastern Standard Time")]
+    [InlineData("US/Eastern")]
+    public void IanaWindowsAndAliasIdsObserveWinterAndSummerOffsets(string timeZoneId)
+    {
+        var s = Example();
+        s.TimeZoneId = timeZoneId;
+
+        ScheduleClock.GetDueOccurrences(s, Utc("2026-01-15T13:03:00Z"), TimeSpan.FromMinutes(5)).ShouldBe([Utc("2026-01-15T13:00:00Z")]);
+        ScheduleClock.GetDueOccurrences(s, Utc("2026-07-15T12:03:00Z"), TimeSpan.FromMinutes(5)).ShouldBe([Utc("2026-07-15T12:00:00Z")]);
+    }
 
     [Fact]
     public void GraceWeekdaysExceptionsAndPause()
@@ -25,10 +67,14 @@ public sealed class ScheduleClockTests
         ScheduleClock.GetDueOccurrences(s, now, TimeSpan.FromMinutes(5)).ShouldBeEmpty();
     }
 
-    [Fact]
-    public void DstSkipsMissingTimeAndUsesEarlierAmbiguousOccurrence()
+    [Theory]
+    [InlineData("America/New_York")]
+    [InlineData("Eastern Standard Time")]
+    [InlineData("US/Eastern")]
+    public void DstSkipsMissingTimeAndUsesEarlierAmbiguousOccurrence(string timeZoneId)
     {
         var s = Example();
+        s.TimeZoneId = timeZoneId;
         s.LocalTime = "02:30";
         ScheduleClock.GetDueOccurrences(s, Utc("2026-03-08T07:31:00Z"), TimeSpan.FromHours(2)).ShouldBeEmpty();
         s.LocalTime = "01:30";

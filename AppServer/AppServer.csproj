@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0" />
+    <PackageReference Include="Microsoft.ICU.ICU4C.Runtime" Version="72.1.0.3" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
     <PackageReference Include="GraphQL.Server.Ui.GraphiQL" Version="8.3.3" />
     <PackageReference Include="Microsoft.AspNetCore.SpaServices.Extensions" Version="11.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="11.0.0">
@@ -16,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Globalization.AppLocalIcu" Value="72.1" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
     <ProjectReference Include="..\AppGraphQL\AppGraphQL.csproj" />
     <Content Remove="wwwroot/index.html" />
     <Content Remove="appsettings.Local.json" />

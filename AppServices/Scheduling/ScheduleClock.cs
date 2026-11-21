@@ -39,7 +39,7 @@ public static class ScheduleClock
         if (!TimeOnly.TryParseExact(schedule.LocalTime, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
             throw new ClientError("Time must use HH:mm.");
         if (!TimeZoneInfo.TryFindSystemTimeZoneById(schedule.TimeZoneId, out _))
-            throw new ClientError("Select a valid time zone.");
+            throw new ClientError("The schedule time zone is not recognized.");
         if (!SonosService.SelectionModes.Contains(schedule.SelectionMode))
             throw new ClientError("Select a valid music selection mode.");
         if (schedule.LibraryObjectId.Length > 2000 || !(schedule.LibraryObjectId.StartsWith("A:", StringComparison.Ordinal) || schedule.LibraryObjectId.StartsWith("S:", StringComparison.Ordinal)))

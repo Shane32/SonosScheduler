@@ -12,18 +12,21 @@ namespace Services;
 
 public sealed class SonosServiceTests
 {
-    [Fact]
-    public async Task WorkerClaimsOccurrenceOnceBeforePlayback()
+    [Theory]
+    [InlineData("UTC", "2026-11-23T08:00:15Z")]
+    [InlineData("America/New_York", "2026-11-23T13:00:15Z")]
+    [InlineData("Eastern Standard Time", "2026-11-23T13:00:15Z")]
+    public async Task WorkerClaimsOccurrenceOnceBeforePlayback(string timeZoneId, string currentUtc)
     {
         using var fixture = new Fixture();
         await fixture.Db.SeedAsync<NetworkGroup>();
-        var now = DateTimeOffset.Parse("2026-11-23T08:00:15Z", CultureInfo.InvariantCulture);
+        var now = DateTimeOffset.Parse(currentUtc, CultureInfo.InvariantCulture);
         var time = new FakeTimeProvider(now);
         fixture.Db.Schedules.Add(new Schedule {
             GroupId = 1,
             Name = "Morning",
             LocalTime = "08:00",
-            TimeZoneId = "UTC",
+            TimeZoneId = timeZoneId,
             LibraryObjectId = "S:root",
             OnlyIfIdle = true,
             Speakers = [new() { SpeakerId = 1, Volume = 10 }]
