@@ -12,6 +12,8 @@ dotnet run --project ConsoleApp2.Tests
 
 Run `dotnet format --no-restore --verify-no-changes` and `npm run build` in `ReactApp` (or publish the server, which builds the client). The generated schema must be approved before client codegen can validate operations. Review received approval files before accepting them.
 
+For SQL startup recovery, use a disposable LocalDB database and a `DbConnectionInterceptor` that throws `TimeoutException` on its first two asynchronous opens. Verify `DatabaseStartupService.MigrateAsync` applies the generated migrations, then confirm an ordinary context still supports an explicit transaction without global retries. Cancel during a simulated connection failure to verify startup stops retrying. This scenario was checked against LocalDB during deployment verification; the normal test suite remains independent of LocalDB.
+
 For a real installation, verify:
 
 - Discovery of a known subnet, then rediscovery after its original seed is powered off.

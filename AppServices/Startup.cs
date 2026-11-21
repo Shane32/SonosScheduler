@@ -11,6 +11,7 @@ public static class Startup
         services.AddHttpContextAccessor();
         services.AddScoped<AuditService>();
         services.AddScoped<AdminService>();
+        services.AddScoped<DatabaseStartupService>();
         services.AddSingleton<ExceptionLogService>();
         services.AddHttpClient<SonosClient>(client => client.Timeout = TimeSpan.FromSeconds(5))
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = false });

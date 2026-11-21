@@ -36,6 +36,8 @@ Publishing is local; no deployment workflow is required. Install the IIS **Manag
 
 Keep the real server address, application name, credentials, and certificate in an ignored `AppServer/Properties/PublishProfiles/*.pubxml` or `.local-deploy/` file. Trust a private publishing certificate obtained through an authenticated administration channel before publishing; do not disable TLS validation. Preserve deployed `appsettings.Local.json` on subsequent publishes. Stop the application or use Web Deploy's AppOffline rule while replacing files.
 
+For publishing with the current Windows credentials, set the `WindowsAuthenticationEnabled` DWORD to `1` under `HKLM\SOFTWARE\Microsoft\WebManagement\Server`, restart WMSVC, and use `authType=NTLM` without a stored username or password. Confirm the publishing port's HTTP.sys certificate binding matches the selected certificate; changing the registry certificate hash alone may leave the original binding in place.
+
 ## Database and first administrator
 
 Create `SonosScheduler` in SQL Server Express and grant the application pool's Windows identity access. For a local instance, a connection string can use:
@@ -56,6 +58,8 @@ ASPNETCORE_ENVIRONMENT=Production
 ```
 
 Startup applies generated EF migrations and creates the configured administrator only if there are no administrators. The runtime SQL identity therefore needs schema migration permissions; alternatively apply the migration with a deployment identity before startup. After first sign-in, add a second administrator and remove the bootstrap password from configuration. There is no public first-user registration endpoint.
+
+Migration startup retries transient SQL connection failures up to five times, including pre-login timeouts while SQL Express starts after a server reboot. IIS allows up to 300 seconds for application startup. Normal database operations keep their existing transaction behavior; startup retry does not replay speaker commands or schedule execution.
 
 Back up the SQL database regularly. The database contains subnet configuration, discovered rooms, schedules, credentials, and the last 30 days of activity. Logs are purged daily, so the retention boundary can lag by up to a day. A failed scheduled attempt is not retried automatically; check logs and run playback manually when needed.
 

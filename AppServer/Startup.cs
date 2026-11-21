@@ -112,7 +112,7 @@ public sealed class Startup(IConfiguration configuration)
         provider.GetRequiredService<ISchema>().Initialize();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await db.Database.MigrateAsync(ct);
+        await scope.ServiceProvider.GetRequiredService<DatabaseStartupService>().MigrateAsync(ct);
         var interrupted = await db.ScheduleRuns.Where(x => x.Status == "Running").ToListAsync(ct);
         foreach (var run in interrupted) {
             run.Status = "Interrupted";
