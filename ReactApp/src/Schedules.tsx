@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@shane32/graphql";
 import { Modal } from "react-bootstrap";
 import { Clock } from "react-bootstrap-icons";
@@ -13,6 +13,11 @@ export function Schedules({ group, busy, run }: { group: NetworkGroup; busy: boo
   const query = useQuery(Q.SonosSchedulesDocument, { variables: { groupId: group.id, after } });
   const [editing, setEditing] = useState<Schedule | "new">();
   const [pauseDays, setPauseDays] = useState<Record<string, number>>({});
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [remove] = useMutation(Q.SonosDeleteScheduleDocument);
   const [enable] = useMutation(Q.SonosEnableScheduleDocument);
   const [pause] = useMutation(Q.SonosPauseScheduleDocument);
@@ -36,7 +41,7 @@ export function Schedules({ group, busy, run }: { group: NetworkGroup; busy: boo
       {query.loading && <p role="status">Loading schedules…</p>}
       <div className="row g-4">
         {query.data?.schedules.items.map((s) => {
-          const paused = !!s.disabledUntil && new Date(s.disabledUntil).getTime() > Date.now();
+          const paused = !!s.disabledUntil && new Date(s.disabledUntil).getTime() > now;
           return (
             <div key={s.id} className="col-12 col-xl-6">
               <article className="card h-100">
@@ -213,7 +218,9 @@ function ScheduleEditor({
   const [update] = useMutation(Q.SonosUpdateScheduleDocument);
   const rooms = input.speakers as { speakerId: string; enabled: boolean; volume?: number | null }[];
   const exceptions = input.exceptions as { date: string; reason?: string | null }[];
-  const set = <K extends keyof ScheduleInput>(key: K, value: ScheduleInput[K]) => setInput((old) => ({ ...old, [key]: value }));
+  const [exceptionKeys, setExceptionKeys] = useState(() => exceptions.map((_, index) => index));
+  const nextExceptionKeyRef = useRef(exceptions.length);
+  const set = <TKey extends keyof ScheduleInput>(key: TKey, value: ScheduleInput[TKey]) => setInput((old) => ({ ...old, [key]: value }));
   return (
     <>
       <Modal show={!browse} onHide={onClose} size="lg" scrollable centered backdrop={busy ? "static" : true}>
@@ -417,13 +424,17 @@ function ScheduleEditor({
                 <button
                   className="btn btn-sm btn-outline-secondary"
                   type="button"
-                  onClick={() => set("exceptions", [...exceptions, { date: "", reason: "" }])}
+                  onClick={() => {
+                    const key = nextExceptionKeyRef.current++;
+                    setExceptionKeys((keys) => [...keys, key]);
+                    set("exceptions", [...exceptions, { date: "", reason: "" }]);
+                  }}
                 >
                   + Add date
                 </button>
               </div>
               {exceptions.map((exception, i) => (
-                <div className="exception-row" key={i}>
+                <div className="exception-row" key={exceptionKeys[i]}>
                   <input
                     className="form-control"
                     required
@@ -453,12 +464,13 @@ function ScheduleEditor({
                   <button
                     className="btn btn-outline-danger btn-sm"
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
+                      setExceptionKeys((keys) => keys.filter((_, n) => n !== i));
                       set(
                         "exceptions",
                         exceptions.filter((_, n) => n !== i),
-                      )
-                    }
+                      );
+                    }}
                   >
                     Remove
                   </button>

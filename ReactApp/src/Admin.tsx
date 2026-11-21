@@ -35,7 +35,7 @@ export function Admin({
   const [addAdmin] = useMutation(Q.SonosAddAdminDocument);
   const [deleteAdmin] = useMutation(Q.SonosDeleteAdminDocument);
   async function auth(path: string, body?: object) {
-    const response = await fetch(`/api/admin/${path}`, {
+    const response = await fetch(`${import.meta.env.BASE_URL}api/admin/${path}`, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", "X-Sonos-Request": "1" },

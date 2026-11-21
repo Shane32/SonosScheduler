@@ -18,9 +18,23 @@ Publishing installs the client dependencies, runs GraphQL codegen and the produc
 
 1. Install IIS, its Application Initialization feature, and the .NET 11 Hosting Bundle matching this application. See Microsoft's [ASP.NET Core IIS guide](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/iis/?view=aspnetcore-11.0).
 2. Create a dedicated application pool with **No Managed Code**, x64 enabled, **Start Mode = AlwaysRunning**, **Idle Time-out = 0**, and **Maximum Worker Processes = 1**. Disable overlapping recycling; use planned maintenance for replacement. The background workers must stay running without browser traffic.
-3. Create the site with **Preload Enabled = True**, Anonymous Authentication enabled, a LAN hostname binding, and HTTPS. Restrict inbound access to the intended LAN with server/network firewall rules. Configure [IIS Application Initialization](https://learn.microsoft.com/en-us/iis/get-started/whats-new-in-iis-8/iis-80-application-initialization) so the pool starts the app after reboot/recycle. Publish to a dedicated site root, not an IIS virtual subdirectory.
+3. Create a site or convert a virtual directory into an IIS **application**, using the dedicated pool. Set **Preload Enabled = True**, enable Anonymous Authentication, and configure a LAN hostname binding and HTTPS. Restrict inbound access to the intended LAN with server/network firewall rules. Configure [IIS Application Initialization](https://learn.microsoft.com/en-us/iis/get-started/whats-new-in-iis-8/iis-80-application-initialization) so the pool starts the app after reboot/recycle.
 4. Copy `artifacts/iis` to the site directory while the application is stopped or `app_offline.htm` is present. Keep environment-specific configuration outside the build artifact. The pool identity needs read/execute access to the published files and write access to its ASP.NET Core Data Protection key store. Enable **Load User Profile** or configure a persistent protected key store so cookie keys survive restarts.
 5. Ensure the server can reach every configured subnet on TCP 1400. The speakers need their own NAS access; the application browses the speakers' indexed libraries. No SSDP relay is required because discovery uses configured unicast subnets.
+
+For a child application, publish with its URL prefix, including the trailing slash. For example, an application named `music` uses:
+
+```powershell
+dotnet publish AppServer -c Release -o artifacts/iis -p:AppBasePath=/music/
+```
+
+The default prefix is `/`. IIS supplies the application's path base to ASP.NET Core; the client build uses the same prefix for assets and API requests. Use a separate pool for each ASP.NET Core application.
+
+## Publishing from a workstation
+
+Publishing is local; no deployment workflow is required. Install the IIS **Management Service** role service before installing the current [Microsoft Web Deploy](https://www.iis.net/downloads/microsoft/web-deploy) package with its handler. Web Deploy 4 requires .NET Framework 4.7.2 or later; older Windows Server installations may need the supported 4.8 update and a planned restart first. This is separate from the application's .NET Hosting Bundle. Enable remote connections in IIS Management Service, select a certificate matching the server's publishing hostname, and start WMSVC automatically. Allow TCP 8172 only from authorized publishing workstations. Windows administrators can publish with their existing Windows credentials; delegate application access explicitly if using a non-administrator account.
+
+Keep the real server address, application name, credentials, and certificate in an ignored `AppServer/Properties/PublishProfiles/*.pubxml` or `.local-deploy/` file. Trust a private publishing certificate obtained through an authenticated administration channel before publishing; do not disable TLS validation. Preserve deployed `appsettings.Local.json` on subsequent publishes. Stop the application or use Web Deploy's AppOffline rule while replacing files.
 
 ## Database and first administrator
 

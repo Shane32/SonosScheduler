@@ -17,13 +17,18 @@
   <ItemGroup>
     <ProjectReference Include="..\AppGraphQL\AppGraphQL.csproj" />
     <Content Remove="wwwroot/index.html" />
+    <Content Remove="appsettings.Local.json" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <AppBasePath Condition="'$(AppBasePath)' == ''">/</AppBasePath>
+  </PropertyGroup>
 
   <Target Name="RestoreReactForPublish" Condition="'$(SkipClientBuild)' != 'true'" Inputs="../ReactApp/package.json;../ReactApp/package-lock.json" Outputs="../ReactApp/node_modules/.package-lock.json">
     <Exec WorkingDirectory="../ReactApp" Command="npm ci --ignore-scripts" />
   </Target>
   <Target Name="BuildReactForPublish" BeforeTargets="ComputeFilesToPublish" DependsOnTargets="RestoreReactForPublish" Condition="'$(SkipClientBuild)' != 'true'">
-    <Exec WorkingDirectory="../ReactApp" Command="npm run build" />
+    <Exec WorkingDirectory="../ReactApp" Command="npm run build" EnvironmentVariables="APP_BASE_PATH=$(AppBasePath)" />
     <ItemGroup>
       <ClientFiles Include="../ReactApp/dist/**/*" />
       <ResolvedFileToPublish Include="@(ClientFiles->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">

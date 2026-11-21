@@ -16,11 +16,12 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ error: boolean; text: string }>();
   const query = useQuery(Q.SonosDashboardDocument);
+  const { refetch } = query;
   const [refresh] = useMutation(Q.SonosRefreshGroupDocument);
   useEffect(() => {
-    const timer = window.setInterval(() => query.refetch(), 30000);
+    const timer = window.setInterval(() => refetch(), 30000);
     return () => window.clearInterval(timer);
-  }, [query.refetch]);
+  }, [refetch]);
   const groups = query.data?.groups.items ?? [];
   const group = groups.find((x) => x.id === groupId) ?? groups[0];
   const speaker = group?.speakers.find((x) => x.id === speakerId) ?? group?.speakers[0];
@@ -228,7 +229,9 @@ export default function App() {
 }
 
 function SpeakerPanel({ speaker, group, busy, run }: { speaker: Speaker; group: NetworkGroup; busy: boolean; run: RunAction }) {
-  const [volume, setVolume] = useState(speaker.volume);
+  const [volumeSelection, setVolumeSelection] = useState<{ observed: number; value: number }>();
+  if (volumeSelection && volumeSelection.observed !== speaker.volume) setVolumeSelection(undefined);
+  const volume = volumeSelection?.observed === speaker.volume ? volumeSelection.value : speaker.volume;
   const [grouping, setGrouping] = useState(false);
   const [browse, setBrowse] = useState(false);
   const [members, setMembers] = useState<string[]>([]);
@@ -236,7 +239,6 @@ function SpeakerPanel({ speaker, group, busy, run }: { speaker: Speaker; group: 
   const [refresh] = useMutation(Q.SonosRefreshSpeakerDocument);
   const [saveMembers] = useMutation(Q.SonosSetMembersDocument);
   const [play] = useMutation(Q.SonosPlayDocument);
-  useEffect(() => setVolume(speaker.volume), [speaker.volume]);
   const current = group.speakers.filter(
     (x) => x.sonosId === speaker.coordinatorId || x.coordinatorId === speaker.coordinatorId || x.id === speaker.id,
   );
@@ -304,7 +306,7 @@ function SpeakerPanel({ speaker, group, busy, run }: { speaker: Speaker; group: 
               min="0"
               max="100"
               value={volume}
-              onChange={(e) => setVolume(Number(e.target.value))}
+              onChange={(e) => setVolumeSelection({ observed: speaker.volume, value: Number(e.target.value) })}
               disabled={!speaker.isOnline || busy}
             />
             <output htmlFor="volume">{volume}%</output>

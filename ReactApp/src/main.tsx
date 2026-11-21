@@ -5,7 +5,7 @@ import App from "./App";
 import "./styles.scss";
 
 const client = new GraphQLClient({
-  url: "/api/graphql",
+  url: `${import.meta.env.BASE_URL}api/graphql`,
   sendDocumentIdAsQuery: true,
   defaultFetchPolicy: "no-cache",
   transformRequest: async (request) => ({
