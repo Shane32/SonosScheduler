@@ -89,11 +89,12 @@ Administrators__BootstrapObjectId=<admin-object-id>
 Sonos__RequireSignIn=false
 ConnectionStrings__AppDbContext=<private-connection-string>
 ASPNETCORE_ENVIRONMENT=Production
+HTTPS_PORT=443
 ```
 
 HTTPS and the exact registered origin are required for a deployed sign-in flow. When changing a hostname or IIS application path, update the registered redirect URLs and rebuild with the matching `AppBasePath`.
 
-The template's optional Key Vault provider is retained. `KeyVaultName` is read after the local JSON file, development User Secrets, and environment variables have been loaded. When configured, Key Vault secrets are loaded afterward and can override those settings; use double hyphens in vault secret names for configuration separators, such as `Authentication--Schemes--Bearer--ValidAudience`. Debug builds use `VisualStudioCredential`; Release builds use `DefaultAzureCredential`. Grant the selected identity permission to read the vault's secrets. An empty `KeyVaultName` skips the provider entirely, so a local IIS deployment needs no Azure runtime identity.
+The template's optional Key Vault provider is retained. Its preliminary configuration reads `KeyVaultName` from `appsettings.json`, User Secrets, and environment variables. The host then loads `appsettings.Local.json` and, when configured, Key Vault. Local JSON can override earlier host settings, and Key Vault is loaded last; avoid duplicating private settings across providers. Use double hyphens in vault secret names for configuration separators, such as `Authentication--Schemes--Bearer--ValidAudience`. Debug builds use `VisualStudioCredential`; Release builds use `DefaultAzureCredential`. Grant the selected identity permission to read the vault's secrets. An empty `KeyVaultName` skips the provider entirely, so a local IIS deployment needs no Azure runtime identity. `HTTPS_PORT` supplies the deployment's redirect port without hardcoding it in Startup.
 
 ## Database and first administrator
 

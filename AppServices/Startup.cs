@@ -1,13 +1,16 @@
+#pragma warning disable IDE0060 // Remove unused parameter
 using AppServices.Scheduling;
 using AppServices.Sonos;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Configuration;
 
 namespace AppServices;
 
-public static class Startup
+public class Startup
 {
-    public static void ConfigureServices(IServiceCollection services)
+    public static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
+        // register services here
         services.AddSingleton(TimeProvider.System);
         services.AddHttpContextAccessor();
         services.AddScoped<AuditService>();
