@@ -15,7 +15,6 @@ jobs:
       pull-requests: write
     with:
       dotnet_folder: "."
-      dotnet_build_runner: windows-latest
       spa_folder: ReactApp
       analysis_artifacts: ReactApp/stats.html
       npm_build_script: build-ci

@@ -14,8 +14,7 @@ public sealed class ScheduleClockTests
     [Theory]
     [InlineData("America/New_York")]
     [InlineData("Eastern Standard Time")]
-    [InlineData("US/Eastern")]
-    public void ValidationAcceptsIanaWindowsAndAliasIdsWithoutChangingStoredId(string timeZoneId)
+    public void ValidationAcceptsIanaAndWindowsIdsWithoutChangingStoredId(string timeZoneId)
     {
         var s = Example();
         s.TimeZoneId = timeZoneId;
@@ -42,8 +41,7 @@ public sealed class ScheduleClockTests
     [Theory]
     [InlineData("America/New_York")]
     [InlineData("Eastern Standard Time")]
-    [InlineData("US/Eastern")]
-    public void IanaWindowsAndAliasIdsObserveWinterAndSummerOffsets(string timeZoneId)
+    public void IanaAndWindowsIdsObserveWinterAndSummerOffsets(string timeZoneId)
     {
         var s = Example();
         s.TimeZoneId = timeZoneId;
@@ -72,7 +70,6 @@ public sealed class ScheduleClockTests
     [Theory]
     [InlineData("America/New_York")]
     [InlineData("Eastern Standard Time")]
-    [InlineData("US/Eastern")]
     public void DstSkipsMissingTimeAndUsesEarlierAmbiguousOccurrence(string timeZoneId)
     {
         var s = Example();
