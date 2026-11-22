@@ -16,7 +16,7 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261121222623_AdministratorDisplayNames";
+    public override string LastMigrationId => "20261122063005_ScheduleRunStatus";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -253,17 +253,18 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset>("StartedAt")
                     .HasColumnType("datetimeoffset");
 
-                b.Property<string>("Status")
-                    .IsRequired()
-                    .HasMaxLength(30)
-                    .HasColumnType("nvarchar(30)");
+                b.Property<int>("Status")
+                    .HasColumnType("int");
 
                 b.HasKey("Id");
 
                 b.HasIndex("ScheduleId", "ScheduledFor")
                     .IsUnique();
 
-                b.ToTable("ScheduleRuns");
+                b.ToTable("ScheduleRuns", t =>
+                    {
+                        t.HasCheckConstraint("CK_ScheduleRuns_Status", "[Status] IN (0, 1, 2, 3, 4)");
+                    });
             });
 
         modelBuilder.Entity("AppDb.Models.ScheduleSpeaker", b =>

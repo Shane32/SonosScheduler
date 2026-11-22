@@ -243,9 +243,9 @@ public class Startup
         }
 
         var context = services.GetRequiredService<AppDbContext>();
-        var interrupted = await context.ScheduleRuns.Where(x => x.Status == "Running").ToListAsync(cancellationToken);
+        var interrupted = await context.ScheduleRuns.Where(x => x.Status == ScheduleRunStatus.Running).ToListAsync(cancellationToken);
         foreach (var run in interrupted) {
-            run.Status = "Interrupted";
+            run.Status = ScheduleRunStatus.Interrupted;
             run.CompletedAt = services.GetRequiredService<TimeProvider>().GetUtcNow();
             run.Message = "Application restarted after this occurrence was claimed; it will not be retried.";
             services.GetRequiredService<AuditService>().Add("Schedule", run.Message, run.ScheduleId, "Warning");

@@ -22,5 +22,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<ScheduleSpeaker>().HasOne(x => x.Schedule).WithMany(x => x.Speakers).HasForeignKey(x => x.ScheduleId);
         modelBuilder.Entity<ScheduleSpeaker>().HasOne(x => x.Speaker).WithMany().HasForeignKey(x => x.SpeakerId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<ScheduleExclusion>().HasOne(x => x.Schedule).WithMany(x => x.Exceptions).HasForeignKey(x => x.ScheduleId);
+        modelBuilder.Entity<ScheduleRun>().ToTable(t => t.HasCheckConstraint("CK_ScheduleRuns_Status", "[Status] IN (0, 1, 2, 3, 4)"));
     }
 }

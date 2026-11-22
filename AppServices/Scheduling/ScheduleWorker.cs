@@ -40,7 +40,7 @@ public sealed class ScheduleWorker(IServiceScopeFactory scopes, TimeProvider tim
         try {
             var schedule = await db.Schedules.AsSplitQuery().Include(x => x.Speakers).Include(x => x.Exceptions).SingleOrDefaultAsync(x => x.Id == id, ct);
             if (schedule is null || !ScheduleClock.GetDueOccurrences(schedule, time.GetUtcNow(), TimeSpan.FromMinutes(5)).Contains(occurrence)) {
-                run.Status = "Skipped";
+                run.Status = ScheduleRunStatus.Skipped;
                 run.Message = "Schedule changed or was disabled before execution.";
             } else {
                 audit.Add("Schedule", $"Triggered '{schedule.Name}' for {occurrence:O}.", id);
@@ -49,18 +49,18 @@ public sealed class ScheduleWorker(IServiceScopeFactory scopes, TimeProvider tim
                 run.Message = await scope.ServiceProvider.GetRequiredService<SonosService>().PlaySelectionAsync(
                     schedule.Speakers.Where(x => x.Enabled).Select(x => (x.SpeakerId, x.Volume)).ToArray(),
                     schedule.GroupId, schedule.LibraryObjectId, schedule.SelectionMode, schedule.OnlyIfIdle, local, ct);
-                run.Status = run.Message.StartsWith("Skipped", StringComparison.Ordinal) ? "Skipped" : "Completed";
+                run.Status = run.Message.StartsWith("Skipped", StringComparison.Ordinal) ? ScheduleRunStatus.Skipped : ScheduleRunStatus.Completed;
             }
         } catch (OperationCanceledException) when (ct.IsCancellationRequested) {
-            run.Status = "Interrupted";
+            run.Status = ScheduleRunStatus.Interrupted;
             run.Message = "Application stopped during execution; this occurrence will not be retried.";
         } catch (Exception ex) {
-            run.Status = "Failed";
+            run.Status = ScheduleRunStatus.Failed;
             run.Message = ex.Message[..Math.Min(2000, ex.Message.Length)];
             await errors.RecordAsync(ex, "Schedule", cancellationToken: CancellationToken.None);
         }
         run.CompletedAt = time.GetUtcNow();
-        audit.Add("Schedule", $"{run.Status}: {run.Message}", id, run.Status == "Failed" ? "Error" : "Information");
+        audit.Add("Schedule", $"{run.Status}: {run.Message}", id, run.Status == ScheduleRunStatus.Failed ? "Error" : "Information");
         await db.SaveChangesAsync(CancellationToken.None);
     }
 }

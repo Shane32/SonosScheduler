@@ -44,7 +44,7 @@ public sealed class SonosServiceTests
         await worker.TickAsync(CancellationToken.None);
         var count = fixture.Http.Enqueued.Count;
         count.ShouldBe(2);
-        (await fixture.Db.ScheduleRuns.SingleAsync()).Status.ShouldBe("Completed");
+        (await fixture.Db.ScheduleRuns.SingleAsync()).Status.ShouldBe(ScheduleRunStatus.Completed);
         await worker.TickAsync(CancellationToken.None);
         fixture.Http.Enqueued.Count.ShouldBe(count);
         (await fixture.Db.ScheduleRuns.CountAsync()).ShouldBe(1);

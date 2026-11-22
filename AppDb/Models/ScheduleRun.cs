@@ -8,6 +8,6 @@ public class ScheduleRun
     public DateTimeOffset ScheduledFor { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
-    [MaxLength(30)] public string Status { get; set; } = "Running";
+    public ScheduleRunStatus Status { get; set; } = ScheduleRunStatus.Running;
     [MaxLength(2000)] public string Message { get; set; } = "";
 }
