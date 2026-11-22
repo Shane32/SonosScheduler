@@ -231,9 +231,12 @@ public class Startup
         var services = scope.ServiceProvider;
         var logger = services.GetRequiredService<ILogger<Startup>>();
         try {
-            _migratingDatabase(logger, null);
-            await services.GetRequiredService<DatabaseStartupService>().MigrateAsync(cancellationToken);
-            _databaseMigrated(logger, null);
+            var databaseStartupService = services.GetRequiredService<DatabaseStartupService>();
+            if (await databaseStartupService.HasPendingMigrationsAsync(cancellationToken)) {
+                _migratingDatabase(logger, null);
+                await databaseStartupService.MigrateAsync(cancellationToken);
+                _databaseMigrated(logger, null);
+            }
         } catch (Exception ex) {
             _databaseMigrationError(logger, ex);
             throw;
