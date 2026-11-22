@@ -32,9 +32,9 @@ export default function App() {
     setBusy(true);
     setNotice(undefined);
     try {
-      await task();
+      const result = await task();
       query.refetch();
-      if (message) setNotice({ error: false, text: message });
+      if (message) setNotice({ error: false, text: typeof message === "function" ? message(result) : message });
       return true;
     } catch (error) {
       setNotice({ error: true, text: error instanceof Error ? error.message : "The request failed." });

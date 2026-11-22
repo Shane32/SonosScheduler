@@ -220,6 +220,7 @@ type ScheduleMutation {
   delete(id: ID!): Boolean!
   disableFor(days: Int!, id: ID!): Boolean!
   setEnabled(enabled: Boolean!, id: ID!): Boolean!
+  test(id: ID!): String!
   update(id: ID!, input: ScheduleInput!): Schedule!
 }
 

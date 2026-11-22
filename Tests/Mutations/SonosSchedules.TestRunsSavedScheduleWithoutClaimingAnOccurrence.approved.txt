@@ -1,0 +1,7 @@
+{
+  "data": {
+    "schedules": {
+      "test": "Started 1 track(s) in Kitchen."
+    }
+  }
+}

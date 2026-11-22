@@ -1,7 +1,56 @@
+using AppServices.Sonos;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Services;
+
 namespace Mutations;
 
 public sealed class SonosSchedules : TestBase
 {
+    private readonly FakeSonosMessageHandler _sonos = new();
+
+    protected override void ConfigureWebHostBuilder(IWebHostBuilder webHostBuilder)
+    {
+        base.ConfigureWebHostBuilder(webHostBuilder);
+        webHostBuilder.ConfigureTestServices(services =>
+            services.AddHttpClient<SonosClient>().ConfigurePrimaryHttpMessageHandler(() => _sonos));
+    }
+
+    [Fact]
+    public async Task TestRunsSavedScheduleWithoutClaimingAnOccurrence()
+    {
+        await Db.SeedAsync<NetworkGroup>();
+        var now = TimeProvider.GetUtcNow();
+        var schedule = new Schedule {
+            GroupId = 1,
+            Name = "Manual playback",
+            TimeZoneId = "America/New_York",
+            Enabled = false,
+            DisabledUntil = now.AddDays(3),
+            UpdatedAt = now.AddDays(-1),
+            LibraryObjectId = "S:root",
+            SelectionMode = "DayOfYearTrack",
+            OnlyIfIdle = true,
+            Speakers = [new() { SpeakerId = 1, Volume = 15 }, new() { SpeakerId = 2, Volume = 25, Enabled = false }],
+            Exceptions = [new() { Date = "2024-12-31", Reason = "Holiday" }]
+        };
+        Db.Schedules.Add(schedule);
+        await Db.SaveChangesAsync();
+
+        var response = await RunQueryAsync($$"""mutation { schedules { test(id: "{{schedule.Id}}") } }""");
+
+        response.ShouldMatchApproved();
+        _sonos.Enqueued.ShouldBe(["x-file-cifs://nas/second.mp3"]);
+        _sonos.Calls.Where(x => x.EndsWith(":SetVolume", StringComparison.Ordinal))
+            .ShouldBe(["192.168.1.20:SetVolume"]);
+        (await Db.ScheduleRuns.CountAsync()).ShouldBe(0);
+        var saved = await Db.Schedules.SingleAsync();
+        saved.Enabled.ShouldBeFalse();
+        saved.DisabledUntil.ShouldBe(schedule.DisabledUntil);
+        saved.UpdatedAt.ShouldBe(schedule.UpdatedAt);
+        (await Db.Logs.AnyAsync(x => x.ScheduleId == schedule.Id && x.Message == "Manual test: Started 1 track(s) in Kitchen.")).ShouldBeTrue();
+    }
+
     [Fact]
     public async Task CreateWithBrowserIanaAndWindowsTimeZones()
     {

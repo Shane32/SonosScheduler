@@ -1,11 +1,12 @@
 using AppGraphQL.InputModels;
 using AppServices;
 using AppServices.Scheduling;
+using AppServices.Sonos;
 using AutoMapper;
 
 namespace AppGraphQL.MutationGraphs;
 
-public sealed class ScheduleMutation(AppDbContext db, IMapper mapper, AuditService audit, TimeProvider time) : DIObjectGraphBase
+public sealed class ScheduleMutation(AppDbContext db, IMapper mapper, AuditService audit, TimeProvider time, SonosService sonos) : DIObjectGraphBase
 {
     public async Task<EfSource<Schedule>> AddAsync(ScheduleInput input, CancellationToken ct)
     {
@@ -69,6 +70,29 @@ public sealed class ScheduleMutation(AppDbContext db, IMapper mapper, AuditServi
         audit.Add("ScheduleEdit", $"Paused schedule '{schedule.Name}' until {schedule.DisabledUntil:O}.", id);
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    public async Task<string> TestAsync([Id] int id, CancellationToken ct)
+    {
+        var schedule = await db.Schedules.AsNoTracking().Include(x => x.Speakers).SingleOrDefaultAsync(x => x.Id == id, ct)
+            ?? throw new ClientError("Schedule not found.");
+        audit.Add("Schedule", $"Manually triggered '{schedule.Name}'.", id);
+        await db.SaveChangesAsync(ct);
+
+        string result;
+        try {
+            result = await sonos.PlayScheduleAsync(schedule, time.GetUtcNow(), ct);
+        } catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested) {
+            var message = ex is ClientError ? $"Manual test failed: {ex.Message}" : "Manual test failed.";
+            audit.Add("Schedule", message[..Math.Min(2000, message.Length)], id, "Error");
+            await db.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
+
+        var outcome = $"Manual test: {result}";
+        audit.Add("Schedule", outcome[..Math.Min(2000, outcome.Length)], id);
+        await db.SaveChangesAsync(CancellationToken.None);
+        return result;
     }
 
     private async Task<Schedule> FindAsync(int id, CancellationToken ct) =>

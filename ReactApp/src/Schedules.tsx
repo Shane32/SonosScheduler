@@ -21,6 +21,7 @@ export function Schedules({ group, busy, run }: { group: NetworkGroup; busy: boo
   const [remove] = useMutation(Q.SonosDeleteScheduleDocument);
   const [enable] = useMutation(Q.SonosEnableScheduleDocument);
   const [pause] = useMutation(Q.SonosPauseScheduleDocument);
+  const [test] = useMutation(Q.SonosTestScheduleDocument);
   const change: RunAction = async (task, message) => {
     const ok = await run(task, message);
     if (ok) query.refetch();
@@ -94,6 +95,19 @@ export function Schedules({ group, busy, run }: { group: NetworkGroup; busy: boo
                   </dl>
                   {paused && <div className="alert alert-warning py-2">Paused until {dateTime(s.disabledUntil)}</div>}
                   <div className="schedule-actions">
+                    <button
+                      className="btn btn-sm btn-outline-primary"
+                      disabled={busy}
+                      aria-label={`Test ${s.name}`}
+                      onClick={() =>
+                        void run(
+                          () => test({ variables: { id: s.id } }),
+                          ({ data }) => data.schedules.test,
+                        )
+                      }
+                    >
+                      Test
+                    </button>
                     <button
                       className="btn btn-sm btn-outline-primary"
                       disabled={busy}

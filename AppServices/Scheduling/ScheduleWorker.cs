@@ -45,10 +45,7 @@ public sealed class ScheduleWorker(IServiceScopeFactory scopes, TimeProvider tim
             } else {
                 audit.Add("Schedule", $"Triggered '{schedule.Name}' for {occurrence:O}.", id);
                 await db.SaveChangesAsync(ct);
-                var local = TimeZoneInfo.ConvertTime(occurrence, TimeZoneInfo.FindSystemTimeZoneById(schedule.TimeZoneId));
-                run.Message = await scope.ServiceProvider.GetRequiredService<SonosService>().PlaySelectionAsync(
-                    schedule.Speakers.Where(x => x.Enabled).Select(x => (x.SpeakerId, x.Volume)).ToArray(),
-                    schedule.GroupId, schedule.LibraryObjectId, schedule.SelectionMode, schedule.OnlyIfIdle, local, ct);
+                run.Message = await scope.ServiceProvider.GetRequiredService<SonosService>().PlayScheduleAsync(schedule, occurrence, ct);
                 run.Status = run.Message.StartsWith("Skipped", StringComparison.Ordinal) ? ScheduleRunStatus.Skipped : ScheduleRunStatus.Completed;
             }
         } catch (OperationCanceledException) when (ct.IsCancellationRequested) {
