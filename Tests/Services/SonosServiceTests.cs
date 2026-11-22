@@ -16,6 +16,7 @@ public sealed class SonosServiceTests
     [InlineData("UTC", "2026-11-23T08:00:15Z")]
     [InlineData("America/New_York", "2026-11-23T13:00:15Z")]
     [InlineData("Eastern Standard Time", "2026-11-23T13:00:15Z")]
+    [InlineData("US/Eastern", "2026-11-23T13:00:15Z")]
     public async Task WorkerClaimsOccurrenceOnceBeforePlayback(string timeZoneId, string currentUtc)
     {
         using var fixture = new Fixture();
