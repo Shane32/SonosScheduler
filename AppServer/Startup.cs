@@ -163,6 +163,8 @@ public class Startup
 
         app.UseCors();
         app.UseWebSockets();
+        // CORS does not protect WebSockets, so validate browser origins to prevent unrelated websites
+        // from using a LAN visitor's browser to access the anonymous GraphQL controls.
         var allowedOrigins = Configuration.GetSection("Cors").GetValue<string>("AllowedOrigins")?.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries) ?? [];
         app.Use(async (context, next) => {
             if (context.WebSockets.IsWebSocketRequest && context.Request.Path.StartsWithSegments("/api/graphql") &&
