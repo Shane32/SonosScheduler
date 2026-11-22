@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
-using Microsoft.Identity.Web;
+
 using Shane32.TestHelpers;
 using TestDb;
 
@@ -20,23 +20,6 @@ public class TestBase : GraphQLTestBase<Startup>
     /// Gets or sets the TimeProvider to use for testing.
     /// </summary>
     protected FakeTimeProvider TimeProvider { get; } = new FakeTimeProvider(new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero));
-
-    /// <summary>
-    /// Gets or sets the user ID to use for testing.
-    /// </summary>
-    protected int UserId { get; set; } = 1;
-
-    /// <inheritdoc/>
-    protected override async Task<IEnumerable<Claim>> GetClaimsAsync()
-    {
-        var claims = (await base.GetClaimsAsync()).ToList();
-        if (!claims.Any(x => x.Type == ClaimConstants.NameIdentifierId)) {
-            var jwtSubject = (await Db.Users.FindAsync(UserId))?.JwtSubject;
-            if (jwtSubject != null)
-                claims.Add(new(ClaimConstants.NameIdentifierId, jwtSubject));
-        }
-        return claims;
-    }
 
     /// <summary>
     /// Gets the test database context.
@@ -73,7 +56,8 @@ public class TestBase : GraphQLTestBase<Startup>
     }
 
     /// <inheritdoc/>
-    public override Task<ExecutionResponse> RunQueryAsync(string query, object? variables = null) => RunQueryAsync(query, variables, true);
+    public override Task<ExecutionResponse> RunQueryAsync(string query, object? variables = null) =>
+        RunQueryAsync(query, variables, true);
 
     /// <inheritdoc cref="RunQueryAsync(string, object?)"/>
     /// <param name="noTracking">Whether to clear the change tracker before and after running the query.</param>

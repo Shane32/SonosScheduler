@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
   <ItemGroup>
     <PackageReference Include="AutoMapperMIT.Collection.EntityFrameworkCore" Version="14.0.3" />
     <PackageReference Include="Shane32.Analyzers" Version="2.0.2">

@@ -39,6 +39,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Globalization.AppLocalIcu" Value="72.1" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
     <ProjectReference Include="..\TestDb\TestDb.csproj" />
     <ProjectReference Include="..\AppServer\AppServer.csproj" />
   </ItemGroup>

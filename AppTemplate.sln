@@ -22,8 +22,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Workflows", "Workflows", "{
 		.github\workflows\push_master.yml = .github\workflows\push_master.yml
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleApp", "ConsoleApp\ConsoleApp.csproj", "{9E9DBF15-398B-47F2-BF5A-F505AC41E38E}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AppDb", "AppDb\AppDb.csproj", "{9ED919B6-E2D5-45F3-B534-8DCAF6379417}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AppServices", "AppServices\AppServices.csproj", "{7B255B16-B119-4273-888F-098743AFC879}"
@@ -38,6 +36,10 @@ Project("{54A90642-561A-4BB1-A94E-469ADEE60C69}") = "ReactApp", "ReactApp\ReactA
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Documentation", "docs\Documentation.csproj", "{C957C002-C383-9E71-4D68-B50B885AC19B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleApp2", "ConsoleApp2\ConsoleApp2.csproj", "{707B83F9-754A-4E61-B770-85FC6ADEF8B5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleApp2.Tests", "ConsoleApp2.Tests\ConsoleApp2.Tests.csproj", "{1B85852D-BF2C-4280-A97C-BC48C6018796}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -48,10 +50,6 @@ Global
 		{1F4CF232-30FF-4BA5-9E6D-D17FF341681A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1F4CF232-30FF-4BA5-9E6D-D17FF341681A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1F4CF232-30FF-4BA5-9E6D-D17FF341681A}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9E9DBF15-398B-47F2-BF5A-F505AC41E38E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9E9DBF15-398B-47F2-BF5A-F505AC41E38E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9E9DBF15-398B-47F2-BF5A-F505AC41E38E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9E9DBF15-398B-47F2-BF5A-F505AC41E38E}.Release|Any CPU.Build.0 = Release|Any CPU
 		{9ED919B6-E2D5-45F3-B534-8DCAF6379417}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{9ED919B6-E2D5-45F3-B534-8DCAF6379417}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9ED919B6-E2D5-45F3-B534-8DCAF6379417}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -80,6 +78,14 @@ Global
 		{548ADD83-8E6C-46A6-A4E1-70F5DCF61BE0}.Release|Any CPU.Deploy.0 = Release|Any CPU
 		{C957C002-C383-9E71-4D68-B50B885AC19B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C957C002-C383-9E71-4D68-B50B885AC19B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{707B83F9-754A-4E61-B770-85FC6ADEF8B5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{707B83F9-754A-4E61-B770-85FC6ADEF8B5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{707B83F9-754A-4E61-B770-85FC6ADEF8B5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{707B83F9-754A-4E61-B770-85FC6ADEF8B5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1B85852D-BF2C-4280-A97C-BC48C6018796}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1B85852D-BF2C-4280-A97C-BC48C6018796}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1B85852D-BF2C-4280-A97C-BC48C6018796}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1B85852D-BF2C-4280-A97C-BC48C6018796}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

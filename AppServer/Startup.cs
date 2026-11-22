@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using AppGraphQL;
+using AppServices;
 using AutoMapper;
 using AutoMapper.EquivalencyExpression;
 using Azure.Core;
@@ -7,6 +8,7 @@ using Azure.Identity;
 using GraphQL.AspNetCore3;
 using GraphQL.Linq;
 using GraphQL.Types;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.ResponseCompression;
 
@@ -39,8 +41,10 @@ public class Startup
     public void ConfigureServices(IServiceCollection services)
     {
         // configure authentication
-        services.AddAuthentication()
+        services.AddAuthentication(Configuration["Authentication:DefaultScheme"] ?? JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options => {
+                options.MapInboundClaims = false;
+                options.TokenValidationParameters.NameClaimType = "name";
                 options.Events = new() {
                     OnTokenValidated = async context => {
                         var dbAuthService = context.HttpContext.RequestServices.GetRequiredService<DbAuthService>();
@@ -92,6 +96,8 @@ public class Startup
         services.AddControllers();
         services.AddSingleton<TokenCredential>(serviceProvider => {
             var clientId = serviceProvider.GetRequiredService<IConfiguration>()["AZURE_CLIENT_ID"] ?? "";
+            if (string.IsNullOrWhiteSpace(clientId))
+                return new DefaultAzureCredential();
             if (!Guid.TryParse(clientId, out _))
                 throw new InvalidOperationException("AZURE_CLIENT_ID must be the runtime user-assigned managed identity's client ID.");
             return new ManagedIdentityCredential(ManagedIdentityId.FromUserAssignedClientId(clientId));
@@ -157,6 +163,21 @@ public class Startup
 
         app.UseCors();
         app.UseWebSockets();
+        // CORS does not protect WebSockets, so validate browser origins to prevent unrelated websites
+        // from using a LAN visitor's browser to access the anonymous GraphQL controls.
+        var allowedOrigins = Configuration.GetSection("Cors").GetValue<string>("AllowedOrigins")?.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries) ?? [];
+        app.Use(async (context, next) => {
+            if (context.WebSockets.IsWebSocketRequest && context.Request.Path.StartsWithSegments("/api/graphql") &&
+                context.Request.Headers.TryGetValue("Origin", out var origin)) {
+                var sameOrigin = Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var uri) &&
+                    uri.Scheme == context.Request.Scheme && string.Equals(uri.Authority, context.Request.Host.Value, StringComparison.OrdinalIgnoreCase);
+                if (!sameOrigin && !allowedOrigins.Contains(origin.ToString(), StringComparer.OrdinalIgnoreCase)) {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return;
+                }
+            }
+            await next(context);
+        });
 
         app.UseRouting();
 
@@ -164,9 +185,8 @@ public class Startup
         app.UseAuthorization();
 
         app.UseGraphQL("/api/graphql", o => {
-            // require all users to have a 'viewer' role (or better) to access the API (the query and mutation types have JWT token scope policies defined)
-            o.AuthorizationRequired = true;
-            o.AuthorizedPolicy = SecurityPolicies.VIEWER_POLICY;
+            // LAN controls are public unless sign-in is enabled; administrative fields have their own policy.
+            o.AuthorizationRequired = Configuration.GetValue<bool>("Sonos:RequireSignIn");
             // we will use the same endpoint for GraphiQL so disable GET requests
             o.HandleGet = false;
             // do not allow batched requests
@@ -175,10 +195,9 @@ public class Startup
             o.ReadQueryStringOnPost = true;
             // let the graphql client process errors by examining the response
             o.ValidationErrorsReturnBadRequest = false;
-            // no cookies in use so no need for CSRF protection
-            o.CsrfProtectionEnabled = false;
-            // in case we want to post files as attachments or bypass CORS
-            o.ReadFormOnPost = true;
+            // Public LAN controls must reject cross-site requests from unrelated browser pages.
+            o.CsrfProtectionEnabled = true;
+            o.ReadFormOnPost = false;
 
             // limit WebSocket requests to the newer protocol with secure keep-alive mechanics
             o.WebSockets.KeepAliveMode = GraphQL.AspNetCore3.WebSockets.KeepAliveMode.TimeoutWithPayload;
@@ -187,10 +206,11 @@ public class Startup
         });
 
         app.UseGraphQLGraphiQL("/api/graphql", new() {
-            GraphQLEndPoint = "/api/graphql",
-            SubscriptionsEndPoint = "/api/graphql",
+            GraphQLEndPoint = "graphql",
+            SubscriptionsEndPoint = "graphql",
             HeaderEditorEnabled = true,
             RequestCredentials = GraphQL.Server.Ui.GraphiQL.RequestCredentials.SameOrigin,
+            GraphQLWsSubscriptions = true,
         });
 
         app.UseEndpoints(endpoints => {
@@ -205,31 +225,38 @@ public class Startup
         // Initialize GraphQL
         serviceProvider.GetRequiredService<ISchema>().Initialize();
         // Ensure db model can be read
-        serviceProvider.GetRequiredService<IEfGraphQLService<AppDbContext>>().GetPrimaryKeyNames<AppDb.Models.User>(); // any table
+        serviceProvider.GetRequiredService<IEfGraphQLService<AppDbContext>>().GetPrimaryKeyNames<NetworkGroup>(); // any table
         // Auto migrate the database
         await using var scope = serviceProvider.CreateAsyncScope();
         var services = scope.ServiceProvider;
         var logger = services.GetRequiredService<ILogger<Startup>>();
         try {
-            var context = services.GetRequiredService<AppDbContext>();
-            if ((await context.Database.GetPendingMigrationsAsync(cancellationToken)).Any()) {
+            var databaseStartupService = services.GetRequiredService<DatabaseStartupService>();
+            if (await databaseStartupService.HasPendingMigrationsAsync(cancellationToken)) {
                 _migratingDatabase(logger, null);
-                await context.Database.MigrateAsync(cancellationToken);
+                await databaseStartupService.MigrateAsync(cancellationToken);
                 _databaseMigrated(logger, null);
             }
         } catch (Exception ex) {
             _databaseMigrationError(logger, ex);
             throw;
         }
+
+        var context = services.GetRequiredService<AppDbContext>();
+        var interrupted = await context.ScheduleRuns.Where(x => x.Status == ScheduleRunStatus.Running).ToListAsync(cancellationToken);
+        foreach (var run in interrupted) {
+            run.Status = ScheduleRunStatus.Interrupted;
+            run.CompletedAt = services.GetRequiredService<TimeProvider>().GetUtcNow();
+            run.Message = "Application restarted after this occurrence was claimed; it will not be retried.";
+            services.GetRequiredService<AuditService>().Add("Schedule", run.Message, run.ScheduleId, "Warning");
+        }
+        await context.SaveChangesAsync(cancellationToken);
+        await services.GetRequiredService<AdminService>().BootstrapAsync(cancellationToken);
     }
 
     internal static void ConfigureAuthorizationOptions(AuthorizationOptions options)
     {
-        options.AddPolicy(SecurityPolicies.ADMIN_POLICY, builder => builder.RequireRole(Role.SysAdmin.ToString(), Role.Admin.ToString()));
-        options.AddPolicy(SecurityPolicies.OPERATOR_POLICY, builder => builder.RequireRole(Role.SysAdmin.ToString(), Role.Admin.ToString(), Role.Operator.ToString()));
-        options.AddPolicy(SecurityPolicies.VIEWER_POLICY, builder => builder.RequireAuthenticatedUser());
-
-        options.AddPolicy(SecurityPolicies.QUERY_POLICY, policy => policy.RequireAuthenticatedUser());
-        options.AddPolicy(SecurityPolicies.MUTATION_POLICY, policy => policy.RequireAuthenticatedUser());
+        options.AddPolicy(SecurityPolicies.ADMIN_POLICY, builder => builder.RequireAuthenticatedUser().RequireRole("Admin")
+            .AddRequirements(new AdministratorAuthorizationHandler.Requirement()));
     }
 }

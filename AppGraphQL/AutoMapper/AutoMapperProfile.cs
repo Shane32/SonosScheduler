@@ -10,12 +10,12 @@ public class AutoMapperProfile : Profile
 {
     public AutoMapperProfile(TimeProvider timeProvider)
     {
-        // Map AddPostInput to Post entity
-        // This demonstrates mapping from mutation input parameters to a database model
-        CreateMap<AddPostInput, Post>()
-            .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(_ => timeProvider.GetUtcNow()));
-
-        // Map UpdatePostInput to Post entity
-        CreateMap<UpdatePostInput, Post>();
+        CreateMap<GroupInput, NetworkGroup>(MemberList.Source);
+        CreateMap<ScheduleSpeakerInput, ScheduleSpeaker>(MemberList.Source);
+        CreateMap<ScheduleExclusionInput, ScheduleExclusion>(MemberList.Source);
+        CreateMap<ScheduleInput, Schedule>(MemberList.Source)
+            .ForMember(x => x.Speakers, o => o.Ignore())
+            .ForMember(x => x.Exceptions, o => o.Ignore())
+            .ForMember(x => x.UpdatedAt, o => o.MapFrom(_ => timeProvider.GetUtcNow()));
     }
 }

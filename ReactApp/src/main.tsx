@@ -1,91 +1,101 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App.tsx";
-import "./index.css";
-import { BrowserRouter, Routes, Route } from "react-router";
 import { GraphQLClient, GraphQLContext } from "@shane32/graphql";
-import "bootstrap/dist/css/bootstrap.min.css";
-import { OAuthRedirect } from "./components/OAuthRedirect";
-import { LogoutRedirect } from "./components/LogoutRedirect";
-import { AuthProvider, AuthManager } from "@shane32/msoauth";
-import { UserAuthProvider } from "./contexts/UserAuthProvider.tsx";
+import { AuthManager, AuthProvider } from "@shane32/msoauth";
+import { Authentication } from "./Authentication";
+import { AuthConfigurationContext } from "./auth";
+import type { AuthConfiguration } from "./auth";
+import "./styles.scss";
 
-class TemplateAuthManager extends AuthManager {
-  protected override async getTokenEndpointUrl(grantType: string): Promise<string> {
-    return import.meta.env.PROD ? "/api/oauth/token" : super.getTokenEndpointUrl(grantType);
-  }
-}
-
-// Initialize AuthManager with Azure AD configuration
-const authManager = new TemplateAuthManager({
-  clientId: import.meta.env.VITE_AZURE_CLIENT_ID,
-  authority: `https://login.microsoftonline.com/${import.meta.env.VITE_AZURE_TENANT_ID}/v2.0`,
-  scopes: import.meta.env.VITE_AZURE_SCOPES,
-  redirectUri: "/oauth/callback",
-  navigateCallback: (path: string) => {
-    // A navigate function that uses the browser's history API
-    window.history.replaceState({}, "", path);
-    // Dispatch a popstate event to trigger react-router navigation
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  },
-  logoutRedirectUri: "/oauth/logout",
-});
-
-const client = new GraphQLClient({
-  url: import.meta.env.VITE_GRAPHQL_URL,
-  webSocketUrl: import.meta.env.VITE_GRAPHQL_WEBSOCKET_URL,
-  sendDocumentIdAsQuery: true,
-  transformRequest: async (config) => {
-    try {
-      const token = await authManager.getIdToken();
-      return {
-        ...config,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        headers: { ...config.headers, Authorization: `Bearer ${token}` },
-      };
-    } catch {
-      return config;
-    }
-  },
-  generatePayload: async () => {
-    try {
-      const token = await authManager.getIdToken();
-      return {
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        Authorization: `Bearer ${token}`,
-      };
-    } catch {
-      return {};
-    }
-  },
-  defaultFetchPolicy: "no-cache",
-});
-
-// Listen for auth events to reset GraphQL client store
-authManager.addEventListener("login", () => client.resetStore());
-authManager.addEventListener("logout", () => client.resetStore());
-
-const rootElement = document.getElementById("root");
-if (!rootElement) {
-  throw new Error("The root element was not found");
-}
-
-const root = createRoot(rootElement);
-
+const root = createRoot(document.getElementById("root")!);
 root.render(
-  <StrictMode>
-    <GraphQLContext value={{ client }}>
-      <AuthProvider authManager={authManager}>
-        <UserAuthProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/oauth/callback" element={<OAuthRedirect />} />
-              <Route path="/oauth/logout" element={<LogoutRedirect />} />
-              <Route path="/*" element={<App />} />
-            </Routes>
-          </BrowserRouter>
-        </UserAuthProvider>
-      </AuthProvider>
-    </GraphQLContext>
-  </StrictMode>,
+  <p className="container py-5" role="status">
+    Loading Sonos Scheduler…
+  </p>,
+);
+
+async function start() {
+  const response = await fetch(`${import.meta.env.BASE_URL}api/oauth/config`, { credentials: "same-origin", cache: "no-store" });
+  if (!response.ok) throw new Error("Could not load sign-in configuration.");
+  const config: AuthConfiguration = await response.json();
+  class TemplateAuthManager extends AuthManager {
+    protected override async getTokenEndpointUrl(grantType: string): Promise<string> {
+      return config.tokenEndpoint ?? super.getTokenEndpointUrl(grantType);
+    }
+  }
+  const manager = config.enabled
+    ? new TemplateAuthManager({
+        id: `sonos:${config.clientId}:${import.meta.env.BASE_URL}`,
+        clientId: config.clientId,
+        authority: config.authority,
+        scopes: config.scopes,
+        redirectUri: config.redirectUri,
+        logoutRedirectUri: config.logoutRedirectUri,
+        navigateCallback: (path) => {
+          const destination = new URL(path, window.location.origin);
+          const safePath =
+            destination.origin === window.location.origin && destination.pathname.startsWith(import.meta.env.BASE_URL)
+              ? `${destination.pathname}${destination.search}${destination.hash}`
+              : import.meta.env.BASE_URL;
+          window.history.replaceState({}, "", safePath);
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        },
+      })
+    : undefined;
+  async function getIdToken() {
+    if (manager?.isAuthenticated()) {
+      try {
+        return await manager.getIdToken();
+      } catch {
+        manager.localLogout();
+      }
+    }
+    return undefined;
+  }
+  const client = new GraphQLClient({
+    url: `${import.meta.env.BASE_URL}api/graphql`,
+    sendDocumentIdAsQuery: true,
+    defaultFetchPolicy: "no-cache",
+    transformRequest: async (request) => {
+      const token = await getIdToken();
+      return {
+        ...request,
+        credentials: "same-origin",
+        headers: {
+          ...request.headers,
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      };
+    },
+    generatePayload: async () => {
+      const token = await getIdToken();
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    },
+  });
+  manager?.addEventListener("login", () => client.resetStore());
+  manager?.addEventListener("logout", () => client.resetStore());
+  const application = <Authentication />;
+  root.render(
+    <StrictMode>
+      <GraphQLContext value={{ client }}>
+        <AuthConfigurationContext value={config}>
+          {manager ? <AuthProvider authManager={manager}>{application}</AuthProvider> : application}
+        </AuthConfigurationContext>
+      </GraphQLContext>
+    </StrictMode>,
+  );
+}
+
+void start().catch((e: unknown) =>
+  root.render(
+    <main className="container py-5">
+      <h1 className="h3">Sonos Scheduler could not start</h1>
+      <p role="alert">{e instanceof Error ? e.message : "An unexpected startup error occurred."}</p>
+      <button className="btn btn-primary" onClick={() => window.location.reload()}>
+        Retry
+      </button>
+    </main>,
+  ),
 );

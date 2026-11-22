@@ -3,13 +3,14 @@
   <ItemGroup>
     <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.2" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0" />
+    <PackageReference Include="Microsoft.ICU.ICU4C.Runtime" Version="72.1.0.3" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
     <PackageReference Include="GraphQL.Server.Ui.GraphiQL" Version="8.3.3" />
     <PackageReference Include="Microsoft.AspNetCore.SpaServices.Extensions" Version="11.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="11.0.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Identity.Web" Version="4.18.0" />
     <PackageReference Include="Shane32.Analyzers" Version="2.0.2">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -18,7 +19,32 @@
   </ItemGroup>
 
   <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Globalization.AppLocalIcu" Value="72.1" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
     <ProjectReference Include="..\AppGraphQL\AppGraphQL.csproj" />
+    <Content Remove="wwwroot/index.html" />
+    <Content Remove="appsettings.Local.json" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <UserSecretsId>SonosScheduler-Development</UserSecretsId>
+    <AppBasePath Condition="'$(AppBasePath)' == ''">/</AppBasePath>
+  </PropertyGroup>
+
+  <Target Name="RestoreReactForPublish" Condition="'$(SkipClientBuild)' != 'true'" Inputs="../ReactApp/package.json;../ReactApp/package-lock.json" Outputs="../ReactApp/node_modules/.package-lock.json">
+    <Exec WorkingDirectory="../ReactApp" Command="npm ci --ignore-scripts" />
+  </Target>
+  <Target Name="BuildReactForPublish" BeforeTargets="ComputeFilesToPublish" DependsOnTargets="RestoreReactForPublish" Condition="'$(SkipClientBuild)' != 'true'">
+    <Exec WorkingDirectory="../ReactApp" Command="npm run build" EnvironmentVariables="APP_BASE_PATH=$(AppBasePath)" />
+    <ItemGroup>
+      <ClientFiles Include="../ReactApp/dist/**/*" />
+      <ResolvedFileToPublish Include="@(ClientFiles->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>wwwroot/%(ClientFiles.RecursiveDir)%(ClientFiles.Filename)%(ClientFiles.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="../ReactApp/src/gql/persisted-documents.json">
+        <RelativePath>persisted-documents.json</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 </Project>

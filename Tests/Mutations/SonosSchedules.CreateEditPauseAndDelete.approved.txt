@@ -1,0 +1,30 @@
+{
+  "data": {
+    "schedules": {
+      "add": {
+        "exceptions": [
+          {
+            "date": "2026-12-25",
+            "reason": "Holiday"
+          }
+        ],
+        "id": "1",
+        "localTime": "08:00",
+        "name": "Morning",
+        "speakers": [
+          {
+            "enabled": true,
+            "speakerId": "1",
+            "volume": 15
+          },
+          {
+            "enabled": false,
+            "speakerId": "2",
+            "volume": null
+          }
+        ],
+        "timeZoneId": "America/New_York"
+      }
+    }
+  }
+}

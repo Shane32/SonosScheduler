@@ -3,12 +3,14 @@ using System.Text.RegularExpressions;
 using Azure.Core;
 using Azure.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace AppServer;
 
 [Route("api/oauth")]
+[AllowAnonymous]
 public sealed partial class OAuthController : ControllerBase
 {
     private const int MAX_REQUEST_BYTES = 32 * 1024;
@@ -19,13 +21,30 @@ public sealed partial class OAuthController : ControllerBase
 
     private readonly JwtBearerOptions _options;
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly TokenCredential _credential;
+    private readonly IConfiguration _configuration;
 
-    public OAuthController(IOptionsMonitor<JwtBearerOptions> options, IHttpClientFactory httpClientFactory, TokenCredential credential)
+    public OAuthController(IOptionsMonitor<JwtBearerOptions> options, IHttpClientFactory httpClientFactory, IConfiguration configuration)
     {
         _options = options.Get(JwtBearerDefaults.AuthenticationScheme);
         _httpClientFactory = httpClientFactory;
-        _credential = credential;
+        _configuration = configuration;
+    }
+
+    [HttpGet("config")]
+    public IActionResult Configuration()
+    {
+        NoStore();
+        var clientId = _options.TokenValidationParameters.ValidAudience ?? _options.Audience;
+        return Ok(new {
+            Enabled = !string.IsNullOrWhiteSpace(clientId) && !string.IsNullOrWhiteSpace(_options.Authority),
+            ClientId = clientId,
+            _options.Authority,
+            Scopes = _configuration["Authentication:Scopes"] ?? "openid profile offline_access",
+            RedirectUri = Request.PathBase + "/oauth/callback",
+            LogoutRedirectUri = Request.PathBase + "/oauth/logout",
+            RequireSignIn = _configuration.GetValue<bool>("Sonos:RequireSignIn"),
+            TokenEndpoint = string.IsNullOrWhiteSpace(_configuration["AZURE_CLIENT_ID"]) ? null : Request.PathBase + "/api/oauth/token"
+        });
     }
 
     [HttpPost("token")]
@@ -48,8 +67,12 @@ public sealed partial class OAuthController : ControllerBase
             return BadRequest();
         }
         if (parameters.Count > 6 || parameters.Files.Count > 0 ||
-            !TryBuildTokenParameters(parameters, _options.TokenValidationParameters.ValidAudience!, Request, out var tokenParameters))
+            !TryBuildTokenParameters(parameters, _options.TokenValidationParameters.ValidAudience ?? _options.Audience ?? "", Request, out var tokenParameters))
             return BadRequest();
+
+        // Local IIS uses the public SPA flow; the proxy needs a managed identity.
+        if (string.IsNullOrWhiteSpace(_configuration["AZURE_CLIENT_ID"]))
+            return StatusCode(StatusCodes.Status503ServiceUnavailable);
 
         try {
             var configuration = await _options.ConfigurationManager!.GetConfigurationAsync(cancellationToken);
@@ -57,7 +80,8 @@ public sealed partial class OAuthController : ControllerBase
                 tokenEndpoint.Scheme != Uri.UriSchemeHttps)
                 return StatusCode(StatusCodes.Status502BadGateway);
 
-            var assertion = await _credential.GetTokenAsync(new TokenRequestContext(_assertionScopes), cancellationToken);
+            var credential = HttpContext.RequestServices.GetRequiredService<TokenCredential>();
+            var assertion = await credential.GetTokenAsync(new TokenRequestContext(_assertionScopes), cancellationToken);
             tokenParameters.Add(new("client_assertion_type", CLIENT_ASSERTION_TYPE));
             tokenParameters.Add(new("client_assertion", assertion.Token));
 

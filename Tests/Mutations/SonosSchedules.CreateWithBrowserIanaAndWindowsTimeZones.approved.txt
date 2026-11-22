@@ -1,0 +1,18 @@
+{
+  "data": {
+    "iana": {
+      "add": {
+        "id": "1",
+        "name": "Browser time zone",
+        "timeZoneId": "America/New_York"
+      }
+    },
+    "windows": {
+      "add": {
+        "id": "2",
+        "name": "Windows time zone",
+        "timeZoneId": "Eastern Standard Time"
+      }
+    }
+  }
+}

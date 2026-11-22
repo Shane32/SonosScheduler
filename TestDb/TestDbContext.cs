@@ -30,6 +30,7 @@ public class TestDbContext : AppDbContext
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.PrepForSqlite();
+        modelBuilder.Entity<Schedule>().Ignore(x => x.RowVersion);
     }
 
     public void ResetDbTrace(bool resetChangeTracker = true)
