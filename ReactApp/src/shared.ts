@@ -2,7 +2,10 @@ import type { SonosDashboardQuery, SonosSchedulesQuery } from "./gql/graphql";
 export type NetworkGroup = SonosDashboardQuery["groups"]["items"][number];
 export type Speaker = NetworkGroup["speakers"][number];
 export type Schedule = SonosSchedulesQuery["schedules"]["items"][number];
-export type RunAction = (task: () => Promise<unknown>, message?: string) => Promise<boolean>;
+export type RunAction = <T extends Promise<unknown>>(
+  task: () => T,
+  message?: string | ((result: Awaited<T>) => string),
+) => Promise<boolean>;
 export const modes = [
   ["PlayAll", "Play the selection", "All tracks in the folder, including its subfolders."],
   ["RandomTrack", "Random track", "One track chosen from this folder and all subfolders."],

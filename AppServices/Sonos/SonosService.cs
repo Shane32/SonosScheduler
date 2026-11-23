@@ -172,6 +172,13 @@ public sealed class SonosService(AppDbContext db, SonosClient client, TimeProvid
         } finally { gate.Release(); }
     }
 
+    public Task<string> PlayScheduleAsync(Schedule schedule, DateTimeOffset occurrence, CancellationToken ct)
+    {
+        var local = TimeZoneInfo.ConvertTime(occurrence, TimeZoneInfo.FindSystemTimeZoneById(schedule.TimeZoneId));
+        return PlaySelectionAsync(schedule.Speakers.Where(x => x.Enabled).Select(x => (x.SpeakerId, x.Volume)).ToArray(),
+            schedule.GroupId, schedule.LibraryObjectId, schedule.SelectionMode, schedule.OnlyIfIdle, local, ct);
+    }
+
     public async Task<string> PlaySelectionAsync(IReadOnlyList<(int SpeakerId, int? Volume)> speakers, int groupId,
         string objectId, string selectionMode, bool onlyIfIdle, DateTimeOffset occurrence, CancellationToken ct)
     {

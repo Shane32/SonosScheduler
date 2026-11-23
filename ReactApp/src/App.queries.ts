@@ -221,6 +221,13 @@ gql`
   }
 `;
 gql`
+  mutation SonosTestSchedule($id: ID!) {
+    schedules {
+      test(id: $id)
+    }
+  }
+`;
+gql`
   mutation SonosAddAdmin($objectId: ID!, $displayName: String!) {
     admins {
       add(objectId: $objectId, displayName: $displayName) {
