@@ -8,8 +8,8 @@ export type RunAction = <T extends Promise<unknown>>(
 ) => Promise<boolean>;
 export const modes = [
   ["PlayAll", "Play the selection", "All tracks in the folder, including its subfolders."],
-  ["RandomTrack", "Random track", "One track chosen from this folder and all subfolders."],
-  ["DayOfYearTrack", "Track by day of year", "Progress through the tracks from January to December."],
+  ["RandomTrack", "Random track", "Queue the whole folder and start at a randomly chosen track."],
+  ["DayOfYearTrack", "Track by day of year", "Queue the whole folder and choose the starting track by date."],
   ["RandomFolder", "Random subfolder", "Choose a nonempty child folder and play its contents."],
   ["DayOfYearFolder", "Subfolder by day of year", "Progress through child folders from January to December."],
 ] as const;

@@ -43,7 +43,7 @@ public sealed class SonosServiceTests
         var worker = new ScheduleWorker(provider.GetRequiredService<IServiceScopeFactory>(), time, provider.GetRequiredService<ExceptionLogService>());
         await worker.TickAsync(CancellationToken.None);
         var count = fixture.Http.Enqueued.Count;
-        count.ShouldBe(2);
+        count.ShouldBe(3);
         (await fixture.Db.ScheduleRuns.SingleAsync()).Status.ShouldBe(ScheduleRunStatus.Completed);
         await worker.TickAsync(CancellationToken.None);
         fixture.Http.Enqueued.Count.ShouldBe(count);
@@ -79,16 +79,37 @@ public sealed class SonosServiceTests
     }
 
     [Fact]
-    public async Task DaySelectionRecursesAndPreservesMetadataWhenQueued()
+    public async Task DaySelectionQueuesAllTracksBeforeSeekingToTheSelectedTrack()
     {
         using var fixture = new Fixture();
         await fixture.Db.SeedAsync<NetworkGroup>();
+        fixture.Http.ExistingQueueCount = 5;
         var result = await fixture.Service.PlaySelectionAsync([(1, 12)], 1, "S:root", "DayOfYearTrack", false,
-            DateTimeOffset.Parse("2026-12-31T08:00:00-05:00", CultureInfo.InvariantCulture), CancellationToken.None);
-        result.ShouldStartWith("Started 1 track");
-        fixture.Http.Enqueued.ShouldBe(["x-file-cifs://nas/second.mp3"]);
-        fixture.Http.Metadata.ShouldContain("Second");
+            DateTimeOffset.Parse("2026-08-01T08:00:00-04:00", CultureInfo.InvariantCulture), CancellationToken.None);
+        result.ShouldBe("Started playback at track 2 of 3 in Kitchen.");
+        fixture.Http.Enqueued.ShouldBe(["x-file-cifs://nas/first.mp3", "x-file-cifs://nas/second.mp3", "x-file-cifs://nas/third.mp3"]);
+        fixture.Http.EnqueuedMetadata[1].ShouldContain("Second");
+        fixture.Http.SeekTargets.ShouldBe(["7"]);
+        var firstEnqueue = fixture.Http.Calls.IndexOf("192.168.1.20:AddURIToQueue");
+        firstEnqueue.ShouldBeGreaterThanOrEqualTo(0);
+        fixture.Http.Calls.Skip(firstEnqueue).Take(7).ShouldBe([
+            "192.168.1.20:AddURIToQueue", "192.168.1.20:AddURIToQueue", "192.168.1.20:AddURIToQueue",
+            "192.168.1.20:SetAVTransportURI", "192.168.1.20:Seek", "192.168.1.20:SetPlayMode", "192.168.1.20:Play"
+        ]);
         fixture.Http.Calls.ShouldContain(x => x.EndsWith("SetVolume", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ImmediateRandomSelectionQueuesAllTracksAndStartsWithinTheSelection()
+    {
+        using var fixture = new Fixture();
+        await fixture.Db.SeedAsync<NetworkGroup>();
+        fixture.Http.ExistingQueueCount = 5;
+
+        await fixture.Service.PlayAsync(1, "S:root", "RandomTrack", CancellationToken.None);
+
+        fixture.Http.Enqueued.ShouldBe(["x-file-cifs://nas/first.mp3", "x-file-cifs://nas/second.mp3", "x-file-cifs://nas/third.mp3"]);
+        fixture.Http.SeekTargets.ShouldHaveSingleItem().ShouldBeOneOf("6", "7", "8");
     }
 
     [Fact]
@@ -112,7 +133,8 @@ public sealed class SonosServiceTests
         await fixture.Db.SeedAsync<NetworkGroup>();
         fixture.Http.CombinedPlayingGroup = true;
         await fixture.Service.PlaySelectionAsync([(1, null)], 1, "S:root", "PlayAll", false, DateTimeOffset.UtcNow, CancellationToken.None);
-        fixture.Http.Enqueued.ShouldBe(["x-file-cifs://nas/first.mp3", "x-file-cifs://nas/second.mp3"]);
+        fixture.Http.Enqueued.ShouldBe(["x-file-cifs://nas/first.mp3", "x-file-cifs://nas/second.mp3", "x-file-cifs://nas/third.mp3"]);
+        fixture.Http.SeekTargets.ShouldBe(["1"]);
         var delegateAt = fixture.Http.Calls.FindIndex(x => x.EndsWith("DelegateGroupCoordinationTo", StringComparison.Ordinal));
         var detachAt = fixture.Http.Calls.FindIndex(x => x.EndsWith("BecomeCoordinatorOfStandaloneGroup", StringComparison.Ordinal));
         delegateAt.ShouldBeGreaterThanOrEqualTo(0);

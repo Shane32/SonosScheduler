@@ -166,8 +166,8 @@ public sealed class SonosService(AppDbContext db, SonosClient client, TimeProvid
         try {
             var selected = await LoadAsync(new Uri(row.DescriptionUrl), IPv4Subnet.Parse(row.Group.Subnet), ct);
             var target = await ResolveTargetAsync(selected, row.Group, ct);
-            var tracks = await SelectAsync(target, objectId, selectionMode, time.GetLocalNow(), ct);
-            await client.PlayQueueAsync(target, tracks, ct);
+            var (tracks, startIndex) = await SelectAsync(target, objectId, selectionMode, time.GetLocalNow(), ct);
+            await client.PlayQueueAsync(target, tracks, startIndex, ct);
             await RefreshCoreAsync(row.GroupId, ct);
         } finally { gate.Release(); }
     }
@@ -187,7 +187,7 @@ public sealed class SonosService(AppDbContext db, SonosClient client, TimeProvid
         try {
             var group = await db.Groups.SingleAsync(x => x.Id == groupId, ct);
             var subnet = IPv4Subnet.Parse(group.Subnet);
-            var tracks = await SelectAsync(await LibrarySpeakerAsync(groupId, ct), objectId, selectionMode, occurrence, ct);
+            var (tracks, startIndex) = await SelectAsync(await LibrarySpeakerAsync(groupId, ct), objectId, selectionMode, occurrence, ct);
             var eligible = new List<(Speaker Speaker, int? Volume)>();
             foreach (var setting in speakers) {
                 var row = await db.Speakers.SingleAsync(x => x.Id == setting.SpeakerId && x.GroupId == groupId, ct);
@@ -219,9 +219,9 @@ public sealed class SonosService(AppDbContext db, SonosClient client, TimeProvid
             foreach (var member in eligible)
                 if (member.Volume is { } volume)
                     await client.SetVolumeAsync(member.Speaker, volume, ct);
-            await client.PlayQueueAsync(coordinator, tracks, ct);
+            await client.PlayQueueAsync(coordinator, tracks, startIndex, ct);
             await RefreshCoreAsync(groupId, ct);
-            return $"Started {tracks.Count} track(s) in {string.Join(", ", eligible.Select(x => x.Speaker.Name))}.";
+            return $"Started playback at track {startIndex + 1} of {tracks.Count} in {string.Join(", ", eligible.Select(x => x.Speaker.Name))}.";
         } finally { gate.Release(); }
     }
 
@@ -255,14 +255,15 @@ public sealed class SonosService(AppDbContext db, SonosClient client, TimeProvid
         throw new ClientError("No reachable speaker. Refresh this subnet group first.");
     }
 
-    private async Task<IReadOnlyList<LibraryItem>> SelectAsync(Speaker speaker, string objectId, string mode, DateTimeOffset occurrence, CancellationToken ct)
+    private async Task<(IReadOnlyList<LibraryItem> Tracks, int StartIndex)> SelectAsync(
+        Speaker speaker, string objectId, string mode, DateTimeOffset occurrence, CancellationToken ct)
     {
         ValidateObjectId(objectId);
         if (!SelectionModes.Contains(mode))
             throw new ClientError("Invalid music selection mode.");
         var root = await client.GetLibraryItemAsync(speaker, objectId, ct);
         if (!root.IsContainer)
-            return IsNasTrack(root) ? [root] : throw new ClientError("Only NAS music library tracks are supported.");
+            return IsNasTrack(root) ? ([root], 0) : throw new ClientError("Only NAS music library tracks are supported.");
         var budget = new LibraryBudget();
         if (mode is "RandomFolder" or "DayOfYearFolder") {
             var folders = (await ChildrenAsync(speaker, root.Id, budget, ct)).Where(x => x.IsContainer).OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Id, StringComparer.Ordinal).ToArray();
@@ -273,16 +274,17 @@ public sealed class SonosService(AppDbContext db, SonosClient client, TimeProvid
                     selections.Add(contents);
             }
             if (selections.Count > 0)
-                return selections[mode == "RandomFolder" ? Random.Shared.Next(selections.Count) : DayOfYearIndex(occurrence, selections.Count)];
+                return (selections[mode == "RandomFolder" ? Random.Shared.Next(selections.Count) : DayOfYearIndex(occurrence, selections.Count)], 0);
         }
         var tracks = await TracksAsync(speaker, root, budget, ct);
         if (tracks.Count == 0)
             throw new ClientError("No playable NAS tracks in this selection.");
-        return mode switch {
-            "RandomTrack" => [tracks[Random.Shared.Next(tracks.Count)]],
-            "DayOfYearTrack" => [tracks[DayOfYearIndex(occurrence, tracks.Count)]],
-            _ => tracks,
+        var startIndex = mode switch {
+            "RandomTrack" => Random.Shared.Next(tracks.Count),
+            "DayOfYearTrack" => DayOfYearIndex(occurrence, tracks.Count),
+            _ => 0,
         };
+        return (tracks, startIndex);
     }
 
     private async Task<List<LibraryItem>> TracksAsync(Speaker speaker, LibraryItem root, LibraryBudget budget, CancellationToken ct)
