@@ -10,9 +10,11 @@ internal sealed class FakeSonosMessageHandler : HttpMessageHandler
     public bool OfflineOffice { get; set; }
     public bool CombinedPlayingGroup { get; set; }
     public bool BadControlUrl { get; set; }
+    public int ExistingQueueCount { get; set; }
     public List<string> Calls { get; } = [];
     public List<string> Enqueued { get; } = [];
-    public string Metadata { get; private set; } = "";
+    public List<string> EnqueuedMetadata { get; } = [];
+    public List<string> SeekTargets { get; } = [];
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var address = request.RequestUri!;
@@ -55,7 +57,11 @@ internal sealed class FakeSonosMessageHandler : HttpMessageHandler
             case "Browse":
                 var id = Arg("ObjectID");
                 var metadata = Arg("BrowseFlag") == "BrowseMetadata";
-                var items = metadata ? new[] { Item(id, "Folder", true) } : id == "S:root" ? new[] { Item("S:first", "First", false), Item("S:child", "Subfolder", true) } : new[] { Item("S:second", "Second", false) };
+                var items = metadata
+                    ? new[] { Item(id, "Folder", true) }
+                    : id == "S:root"
+                        ? new[] { Item("S:first", "First", false), Item("S:child", "Subfolder", true) }
+                        : new[] { Item("S:second", "Second", false), Item("S:third", "Third", false) };
                 XNamespace didl = "urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/";
                 values.Add(new("Result", new XElement(didl + "DIDL-Lite", items).ToString()));
                 values.Add(new("NumberReturned", items.Length));
@@ -63,8 +69,11 @@ internal sealed class FakeSonosMessageHandler : HttpMessageHandler
                 break;
             case "AddURIToQueue":
                 Enqueued.Add(Arg("EnqueuedURI"));
-                Metadata = Arg("EnqueuedURIMetaData");
-                values.Add(new("FirstTrackNumberEnqueued", Enqueued.Count));
+                EnqueuedMetadata.Add(Arg("EnqueuedURIMetaData"));
+                values.Add(new("FirstTrackNumberEnqueued", ExistingQueueCount + Enqueued.Count));
+                break;
+            case "Seek":
+                SeekTargets.Add(Arg("Target"));
                 break;
         }
         XNamespace soap = "http://schemas.xmlsoap.org/soap/envelope/";

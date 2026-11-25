@@ -40,7 +40,8 @@ public sealed class SonosSchedules : TestBase
         var response = await RunQueryAsync($$"""mutation { schedules { test(id: "{{schedule.Id}}") } }""");
 
         response.ShouldMatchApproved();
-        _sonos.Enqueued.ShouldBe(["x-file-cifs://nas/second.mp3"]);
+        _sonos.Enqueued.ShouldBe(["x-file-cifs://nas/first.mp3", "x-file-cifs://nas/second.mp3", "x-file-cifs://nas/third.mp3"]);
+        _sonos.SeekTargets.ShouldBe(["3"]);
         _sonos.Calls.Where(x => x.EndsWith(":SetVolume", StringComparison.Ordinal))
             .ShouldBe(["192.168.1.20:SetVolume"]);
         (await Db.ScheduleRuns.CountAsync()).ShouldBe(0);
@@ -48,7 +49,7 @@ public sealed class SonosSchedules : TestBase
         saved.Enabled.ShouldBeFalse();
         saved.DisabledUntil.ShouldBe(schedule.DisabledUntil);
         saved.UpdatedAt.ShouldBe(schedule.UpdatedAt);
-        (await Db.Logs.AnyAsync(x => x.ScheduleId == schedule.Id && x.Message == "Manual test: Started 1 track(s) in Kitchen.")).ShouldBeTrue();
+        (await Db.Logs.AnyAsync(x => x.ScheduleId == schedule.Id && x.Message == "Manual test: Started playback at track 3 of 3 in Kitchen.")).ShouldBeTrue();
     }
 
     [Fact]

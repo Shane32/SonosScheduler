@@ -1,7 +1,7 @@
 {
   "data": {
     "schedules": {
-      "test": "Started 1 track(s) in Kitchen."
+      "test": "Started playback at track 3 of 3 in Kitchen."
     }
   }
 }

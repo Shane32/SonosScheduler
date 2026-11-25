@@ -153,23 +153,27 @@ public sealed class SonosClient(HttpClient http)
         return LibraryItem.FromXml(item);
     }
 
-    public async Task PlayQueueAsync(Speaker coordinator, IReadOnlyList<LibraryItem> tracks, CancellationToken ct)
+    public async Task PlayQueueAsync(Speaker coordinator, IReadOnlyList<LibraryItem> tracks, int startIndex, CancellationToken ct)
     {
         if (tracks.Count == 0)
             throw new SonosException("The selected folder has no playable NAS tracks.");
-        var first = 0;
-        foreach (var track in tracks) {
+        ArgumentOutOfRangeException.ThrowIfNegative(startIndex);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(startIndex, tracks.Count);
+        var startPosition = 0;
+        for (var index = 0; index < tracks.Count; index++) {
+            var track = tracks[index];
             var result = await InvokeAsync(coordinator, TRANSPORT, "AddURIToQueue", ct,
                 ("InstanceID", "0"), ("EnqueuedURI", track.ResourceUri), ("EnqueuedURIMetaData", track.Metadata),
                 ("DesiredFirstTrackNumberEnqueued", "0"), ("EnqueueAsNext", "0"));
-            if (first == 0)
-                first = Number(result, "FirstTrackNumberEnqueued");
+            // Sonos returns the absolute position, including tracks already in the queue.
+            if (index == startIndex)
+                startPosition = Number(result, "FirstTrackNumberEnqueued");
         }
-        if (first < 1)
+        if (startPosition < 1)
             throw new SonosException("Sonos did not return a queue position.");
         await InvokeAsync(coordinator, TRANSPORT, "SetAVTransportURI", ct, ("InstanceID", "0"),
             ("CurrentURI", $"x-rincon-queue:{coordinator.Id}#0"), ("CurrentURIMetaData", ""));
-        await InvokeAsync(coordinator, TRANSPORT, "Seek", ct, ("InstanceID", "0"), ("Unit", "TRACK_NR"), ("Target", first.ToString(CultureInfo.InvariantCulture)));
+        await InvokeAsync(coordinator, TRANSPORT, "Seek", ct, ("InstanceID", "0"), ("Unit", "TRACK_NR"), ("Target", startPosition.ToString(CultureInfo.InvariantCulture)));
         await InvokeAsync(coordinator, TRANSPORT, "SetPlayMode", ct, ("InstanceID", "0"), ("NewPlayMode", "NORMAL"));
         await ResumeAsync(coordinator, ct);
     }

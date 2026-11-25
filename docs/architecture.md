@@ -23,14 +23,14 @@ Folder selection is recursive, cycle-aware, and bounded to 32 levels, 100,000 br
 | Selection                | Behavior                                                                          |
 | ------------------------ | --------------------------------------------------------------------------------- |
 | Play the selection       | Queue the track or every NAS track under the selected folder.                     |
-| Random track             | Uniformly choose one descendant track.                                            |
-| Track by day of year     | Choose one descendant by progress through the local calendar year.                |
+| Random track             | Queue the full subtree and start at a uniformly chosen track.                     |
+| Track by day of year     | Queue the full subtree and choose the starting track by local calendar progress.  |
 | Random subfolder         | Uniformly choose a nonempty immediate child folder; queue its full subtree.       |
 | Subfolder by day of year | Choose a nonempty immediate child folder by calendar progress; queue its subtree. |
 
 If no nonempty child folders exist, folder modes use the selected folder. Calendar progress is `(dayOfYear - 1) / (daysInYear - 1)`, including leap years: January 1 selects the first item and December 31 the last. Scheduled selection uses the schedule's local date; immediate playback uses the server's local date.
 
-Selections append to the existing coordinator queue and start at the first newly added track. This preserves the prior queue. A direct Play/Pause applies to the selected room's live coordinator; volume belongs to the individual room.
+Selections append to the existing coordinator queue. Track selection modes start at the chosen track and continue through the following tracks in queue order. Other selections start at the first newly added track. A direct Play/Pause applies to the selected room's live coordinator. Volume belongs to the individual room.
 
 Schedules check live coordinator state, including `TRANSITIONING`, before deciding that a room is idle. An unknown or unavailable room is excluded from idle-only execution. A coordinator leaving unselected rooms delegates coordination before detaching, so other rooms can retain their playback. Selected rooms are detached and regrouped, individual non-null volumes are set, and the prepared selection starts. Operations on a subnet are serialized within the process. Sonos operations are not transactional: a device outage can leave a partially applied group or queue, which is recorded as a failure. Physical controls and other Sonos clients can still race an operation.
 
